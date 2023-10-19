@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from SDXL.util import (
     DictToClass,
-    load_weights,
+    load_model_weight,
     load_base_clip_model_weight,
     load_refiner_clip_model_weight,
 )
@@ -398,6 +398,8 @@ class SDXLCLIPTextModel(nn.Module):
 
 
 def clip_vision_model():
+    # output: SdxlClipVision
+
     '''This model is been used by sdxl 1.0 base model'''
 
     # come from comfy/clip_vision_config_g.json
@@ -423,11 +425,14 @@ def clip_vision_model():
     )
     model = SDXLCLIPVisionModel(config)
     model = model.half()
-    load_weights(model, model_path="models/clip_vision_g.safetensors")
+    load_model_weight(model, model_path="models/clip_vision_g.safetensors")
     model = model.eval()
     return model   
 
 def clip_text_model(version="base_1.0"):
+    # output: SdxlClipText
+    # output: RefinerClipText
+
     model = SDXLCLIPTextModel(version=version)
     model = model.half()
     if version == "base_1.0":

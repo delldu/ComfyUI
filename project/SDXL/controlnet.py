@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from SDXL.util import (
     zero_module,
     timestep_embedding,
+    state_dict_load,
+    state_dict_filter,
 )
 
 from SDXL.attention import (
@@ -40,19 +42,25 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
+    unet_path="models/sd_xl_base_1.0.safetensors"
+    unet_checkpoint = unet_path if cdir == "" else cdir + "/" + unet_path
 
-        _, extension = os.path.splitext(checkpoint)
-        if extension.lower() == ".safetensors":
-            import safetensors.torch
-            lora_weight = safetensors.torch.load_file(checkpoint, device='cpu')
-        else:
-            lora_weight = torch.load(checkpoint, map_location=torch.device('cpu'))
+    if os.path.exists(checkpoint) and os.path.exists(unet_checkpoint):
+        print(f"Loading control-lora weight from {unet_checkpoint} and {checkpoint} ...")
+
+        unet_weight = state_dict_load(unet_checkpoint)
+        unet_weight = state_dict_filter(unet_weight, ["model.diffusion_model."], remove_prefix=True)
+
+        lora_weight = state_dict_load(checkpoint)
+
+        for k in unet_weight:
+            update_model_weight(model, k, unet_weight[k])
 
         for k in lora_weight:
             if k not in {"lora_controlnet"}:
                 update_model_weight(model, k, lora_weight[k])
+            else:
+                pass # skip "lora_controlnet"
     else:
         print("-" * 32, "Warnning", "-" * 32)
         print(f"model weight file '{checkpoint}'' not exist !!!")
@@ -326,11 +334,47 @@ class ControlNet(nn.Module):
 
         return outs
 
-if __name__ == "__main__":
+
+def canny_control_lora():
+    # output: SdxlCannyLora
+
     model = ControlNet()
+    model = model.half()
     load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
-    # load_ctrl_lora_weights(model, model_path="models/control-lora-sketch-rank256.safetensors")
+    model = model.eval()
+    return model
+
+def depth_control_lora():
+    # output: SdxlDepthLora
+
+    model = ControlNet()
+    model = model.half()
+    load_ctrl_lora_weights(model, model_path="models/control-lora-depth-rank128.safetensors")
+    model = model.eval()
+    return model
+
+def color_control_lora():
+    # output: SdxlColorLora
+
+    model = ControlNet()
+    model = model.half()
+    load_ctrl_lora_weights(model, model_path="models/control-lora-recolor-rank128.safetensors")
+    model = model.eval()
+    return model
+
+def sketch_control_lora():
+    # output: SdxlSketchLora
+
+    model = ControlNet()
+    model = model.half()
+    load_ctrl_lora_weights(model, model_path="models/control-lora-sketch-rank128.safetensors")
+    model = model.eval()
+    return model
+
+if __name__ == "__main__":
+    import todos
+    model = canny_control_lora()
     # model = torch.jit.script(model)
     # torch.save(model.state_dict(), "/tmp/controlnet.pth")
-    print(model)
-
+    # print(model)
+    todos.debug.output_weight(model.state_dict())

@@ -31,7 +31,7 @@ class BaseModel(nn.Module):
     def __init__(self, version):
         super().__init__()
         self.scale_factor = 0.13025
-        self.diffusion_model = UNetModel(version=version, use_fp16=False)
+        self.diffusion_model = UNetModel(version=version)
         self.register_schedule(beta_schedule="linear", timesteps=1000, 
             linear_start=0.00085, linear_end=0.012)
 

@@ -472,6 +472,11 @@ class UNetModel(nn.Module):
             zero_module(operations.conv_nd(dims, model_channels, out_channels, 3, padding=1, dtype=self.dtype, device=device)),
         )
 
+        if version == "base_1.0":
+            load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
+        else:
+            load_diffusion_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")
+
     def forward(self, x, timesteps=None, context=None, y=None, control=None):
         # x.shape -- [2, 4, 104, 157]
         # timesteps.size() -- [2]
@@ -517,27 +522,29 @@ class UNetModel(nn.Module):
         return self.out(h)
 
 
-def sdxl_base_model():
+def sdxl_unet_model():
+    # output: SdxlUnetModel
+
     model = UNetModel(version="base_1.0")
-    load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
     model = model.eval()
     return model    
 
 
-def sdxl_refiner_model():
+def refiner_unet_model():
+    # output: RefinerUnetModel
+
     model = UNetModel(version="refiner_1.0")
-    load_diffusion_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")
     model = model.eval()
     return model    
 
 if __name__ == "__main__":
     import todos
 
-    # model = sdxl_base_model()
+    model = sdxl_unet_model()
     # model = torch.jit.script(model)
     # print(model)
 
-    model = sdxl_refiner_model()
+    # model = refiner_unet_model()
     # model = torch.jit.script(model)
     # print(model)
 

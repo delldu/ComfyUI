@@ -10,6 +10,30 @@ class DictToClass(object):
         if _obj:
             self.__dict__.update(_obj)
 
+def state_dict_load(checkpoint):
+    _, extension = os.path.splitext(checkpoint)
+    if extension.lower() == ".safetensors":
+        import safetensors.torch
+        state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
+    else:
+        state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
+    return state_dict
+
+
+def state_dict_filter(source_sd, prefix_list, remove_prefix=False):
+    target_sd = {}
+    keys = list(source_sd.keys())
+
+    for prefix in prefix_list:
+        for k in keys:
+            if k.startswith(prefix):
+                if remove_prefix:
+                    target_sd[k[len(prefix):]] = source_sd.pop(k)
+                else:
+                    target_sd[k] = source_sd.pop(k)
+
+    return target_sd
+
 
 def state_dict_key_replace(state_dict, keys_to_replace):
     for x in keys_to_replace:
@@ -103,22 +127,15 @@ def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
     if os.path.exists(checkpoint):
         print(f"Loading weight from {checkpoint} ...")
-        _, extension = os.path.splitext(checkpoint)
-        if extension.lower() == ".safetensors":
-            import safetensors.torch
-            state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
-        else:
-            state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
 
+        state_dict = state_dict_load(checkpoint)
         state_dict = process_base_clip_state_dict(state_dict)
-
-        prefix = "cond_stage_model."
-        target_state_dict = {}
-        for n, p in state_dict.items():
-            if n.startswith(prefix):
-                n = n.replace(prefix, "")
-                target_state_dict[n] = p
-        model.load_state_dict(target_state_dict, strict=False)
+        target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+        m, u = model.load_state_dict(target_state_dict, strict=False)
+        if len(m) > 0:
+            print(f"Load weight from {checkpoint} missing keys: ", m)
+        if len(u) > 0:
+            print(f"Load weight from {checkpoint} leftover keys: ", u)        
     else:
         print("-" * 32, "Warnning", "-" * 32)
         print(f"model weight file '{checkpoint}'' not exist !!!")
@@ -130,40 +147,74 @@ def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.s
 
     if os.path.exists(checkpoint):
         print(f"Loading weight from {checkpoint} ...")
-        _, extension = os.path.splitext(checkpoint)
-        if extension.lower() == ".safetensors":
-            import safetensors.torch
-            state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
-        else:
-            state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
 
+        state_dict = state_dict_load(checkpoint)
         state_dict = process_refiner_clip_state_dict(state_dict)
-
-        prefix = "cond_stage_model."
-        target_state_dict = {}
-        for n, p in state_dict.items():
-            if n.startswith(prefix):
-                n = n.replace(prefix, "")
-                target_state_dict[n] = p
-        model.load_state_dict(target_state_dict, strict=False)
+        target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+        m, u = model.load_state_dict(target_state_dict, strict=False)
+        if len(m) > 0:
+            print(f"Load weight from {checkpoint} missing keys: ", m)
+        if len(u) > 0:
+            print(f"Load weight from {checkpoint} leftover keys: ", u)
     else:
         print("-" * 32, "Warnning", "-" * 32)
         print(f"model weight file '{checkpoint}'' not exist !!!")
 
 
-def load_weights(model, model_path="models/sdxl_vae.pth"):
+def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
     if os.path.exists(checkpoint):
         print(f"Loading weight from {checkpoint} ...")
 
-        _, extension = os.path.splitext(checkpoint)
-        if extension.lower() == ".safetensors":
-            import safetensors.torch
-            state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
-        else:
-            state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
+        state_dict = state_dict_load(checkpoint)
+        model.load_state_dict(state_dict)
+    else:
+        print("-" * 32, "Warnning", "-" * 32)
+        print(f"model weight file '{checkpoint}'' not exist !!!")
+
+
+def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+
+    if os.path.exists(checkpoint):
+        print(f"Loading weight from {checkpoint} ...")
+
+        state_dict = state_dict_load(checkpoint)
+        state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv.",
+            "decoder.", "post_quant_conv."], remove_prefix=False)
+
+        model.load_state_dict(state_dict)
+    else:
+        print("-" * 32, "Warnning", "-" * 32)
+        print(f"model weight file '{checkpoint}'' not exist !!!")
+
+def load_vaeencode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+
+    if os.path.exists(checkpoint):
+        print(f"Loading weight from {checkpoint} ...")
+
+        state_dict = state_dict_load(checkpoint)
+        state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv."], remove_prefix=False)
+        model.load_state_dict(state_dict)
+    else:
+        print("-" * 32, "Warnning", "-" * 32)
+        print(f"model weight file '{checkpoint}'' not exist !!!")
+
+def load_vaedecode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+
+    if os.path.exists(checkpoint):
+        print(f"Loading weight from {checkpoint} ...")
+
+        state_dict = state_dict_load(checkpoint)
+        state_dict = state_dict_load(checkpoint)
+        state_dict = state_dict_filter(state_dict, ["decoder.", "post_quant_conv."], remove_prefix=False)
         model.load_state_dict(state_dict)
     else:
         print("-" * 32, "Warnning", "-" * 32)
@@ -176,25 +227,14 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
     if os.path.exists(checkpoint):
         print(f"Loading weight from {checkpoint} ...")
-        _, extension = os.path.splitext(checkpoint)
-        if extension.lower() == ".safetensors":
-            import safetensors.torch
-            state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
-        else:
-            state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
 
-        # pdb.set_trace()
-
-        prefix = "model.diffusion_model."
-        target_state_dict = {}
-        for n, p in state_dict.items():
-            if n.startswith(prefix):
-                n = n.replace(prefix, "")
-                target_state_dict[n] = p
+        state_dict = state_dict_load(checkpoint)
+        target_state_dict = state_dict_filter(state_dict, ["model.diffusion_model."], remove_prefix=True)
         model.load_state_dict(target_state_dict)
     else:
         print("-" * 32, "Warnning", "-" * 32)
         print(f"model weight file '{checkpoint}'' not exist !!!")
+
 
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
