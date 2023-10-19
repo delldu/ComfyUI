@@ -17,6 +17,7 @@ from einops import repeat
 
 from comfy.ldm.util import instantiate_from_config
 import comfy.ops
+import pdb
 
 def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
     if schedule == "linear":

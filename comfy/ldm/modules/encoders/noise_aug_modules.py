@@ -1,6 +1,8 @@
 from ..diffusionmodules.upscaling import ImageConcatWithNoiseAugmentation
 from ..diffusionmodules.openaimodel import Timestep
 import torch
+import todos
+import pdb
 
 class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
     def __init__(self, *args, clip_stats_path=None, timestep_dim=256, **kwargs):
@@ -24,6 +26,9 @@ class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
         return x
 
     def forward(self, x, noise_level=None):
+        todos.debug.output_var("x", x)
+        todos.debug.output_var("noise_level", noise_level)
+
         if noise_level is None:
             noise_level = torch.randint(0, self.max_noise_level, (x.shape[0],), device=x.device).long()
         else:

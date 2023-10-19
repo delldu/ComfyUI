@@ -8,7 +8,8 @@ import comfy.model_patcher
 
 import comfy.cldm.cldm
 import comfy.t2i_adapter.adapter
-
+import todos
+import pdb
 
 def broadcast_image_to(tensor, target_batch_size, batched_number):
     current_batch_size = tensor.shape[0]
@@ -48,7 +49,7 @@ class ControlBase:
         self.timestep_percent_range = timestep_percent_range
         return self
 
-    def pre_run(self, model, percent_to_timestep_function):
+    def base_pre_run(self, model, percent_to_timestep_function):
         self.timestep_range = (percent_to_timestep_function(self.timestep_percent_range[0]), percent_to_timestep_function(self.timestep_percent_range[1]))
         if self.previous_controlnet is not None:
             self.previous_controlnet.pre_run(model, percent_to_timestep_function)
@@ -159,6 +160,11 @@ class ControlNet(ControlBase):
         y = cond.get('c_adm', None)
         if y is not None:
             y = y.to(self.control_model.dtype)
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model_forward
+        #    self.control_model -- ControlNet.forward(...)
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         control = self.control_model(x=x_noisy.to(self.control_model.dtype), hint=self.cond_hint, timesteps=t, context=context.to(self.control_model.dtype), y=y)
         return self.control_merge(None, control, control_prev, output_dtype)
 
@@ -244,7 +250,7 @@ class ControlLora(ControlNet):
         self.global_average_pooling = global_average_pooling
 
     def pre_run(self, model, percent_to_timestep_function):
-        super().pre_run(model, percent_to_timestep_function)
+        super().base_pre_run(model, percent_to_timestep_function)
         controlnet_config = model.model_config.unet_config.copy()
         controlnet_config.pop("out_channels")
         controlnet_config["hint_channels"] = self.control_weights["input_hint_block.0.weight"].shape[1]
@@ -262,6 +268,7 @@ class ControlLora(ControlNet):
             try:
                 comfy.utils.set_attr(self.control_model, k, weight)
             except:
+                # skip output_blocks.*, out.* 
                 pass
 
         for k in self.control_weights:

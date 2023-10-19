@@ -16,6 +16,7 @@ from .util import (
 from ..attention import SpatialTransformer
 from comfy.ldm.util import exists
 import comfy.ops
+import pdb
 
 class TimestepBlock(nn.Module):
     """

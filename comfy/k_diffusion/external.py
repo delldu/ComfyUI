@@ -4,7 +4,8 @@ import torch
 from torch import nn
 
 from . import sampling, utils
-
+import todos
+import pdb
 
 class VDenoiser(nn.Module):
     """A v-diffusion-pytorch model wrapper for k-diffusion."""
@@ -103,8 +104,15 @@ class DiscreteEpsDDPMDenoiser(DiscreteSchedule):
 
     def __init__(self, model, alphas_cumprod, quantize):
         super().__init__(((1 - alphas_cumprod) / alphas_cumprod) ** 0.5, quantize)
+        # alphas_cumprod.size() -- [1000]
+        # quantize = True
+
         self.inner_model = model
         self.sigma_data = 1.
+        # self.inner_model ----
+        # CFGNoisePredictor(
+        #   (inner_model): SDXL(
+        #     (diffusion_model): UNetModel(...)))
 
     def get_scalings(self, sigma):
         c_out = -sigma

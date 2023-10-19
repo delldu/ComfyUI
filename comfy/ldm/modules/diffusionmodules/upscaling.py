@@ -5,7 +5,7 @@ from functools import partial
 
 from .util import extract_into_tensor, make_beta_schedule
 from comfy.ldm.util import default
-
+import pdb
 
 class AbstractLowScaleModel(nn.Module):
     # for concatenating a downsampled image to the latent representation
@@ -42,7 +42,9 @@ class AbstractLowScaleModel(nn.Module):
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
     def q_sample(self, x_start, t, noise=None):
+        # noise.size() -- [1, 1280]
         noise = default(noise, lambda: torch.randn_like(x_start))
+        pdb.set_trace()
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 

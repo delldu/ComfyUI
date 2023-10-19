@@ -1,6 +1,8 @@
 from comfy import sd1_clip
 import torch
 import os
+import todos
+import pdb
 
 class SDXLClipG(sd1_clip.SD1ClipModel):
     def __init__(self, device="cpu", max_length=77, freeze=True, layer="penultimate", layer_idx=None, textmodel_path=None, dtype=None):
@@ -25,6 +27,7 @@ class SDXLTokenizer(sd1_clip.SD1Tokenizer):
     def __init__(self, embedding_directory=None):
         self.clip_l = sd1_clip.SD1Tokenizer(embedding_directory=embedding_directory)
         self.clip_g = SDXLClipGTokenizer(embedding_directory=embedding_directory)
+        # self.clip_l.inv_vocab == self.clip_g.inv_vocab ==> True
 
     def tokenize_with_weights(self, text:str, return_word_ids=False):
         out = {}
@@ -51,10 +54,11 @@ class SDXLClipModel(torch.nn.Module):
         self.clip_l.reset_clip_layer()
 
     def encode_token_weights(self, token_weight_pairs):
-        token_weight_pairs_g = token_weight_pairs["g"]
-        token_weight_pairs_l = token_weight_pairs["l"]
+        token_weight_pairs_g = token_weight_pairs["g"] # padding with 0, , xxxx1111
+        token_weight_pairs_l = token_weight_pairs["l"] # padding with eos, xxxx1111
         g_out, g_pooled = self.clip_g.encode_token_weights(token_weight_pairs_g)
         l_out, l_pooled = self.clip_l.encode_token_weights(token_weight_pairs_l)
+
         return torch.cat([l_out, g_out], dim=-1), g_pooled
 
     def load_sd(self, sd):

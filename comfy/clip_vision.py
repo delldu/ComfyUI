@@ -7,9 +7,12 @@ import contextlib
 import comfy.ops
 import comfy.model_patcher
 import comfy.model_management
+import pdb
 
 class ClipVisionModel():
     def __init__(self, json_config):
+        # json_config -- comfy/clip_vision_config_g.json
+
         config = CLIPVisionConfig.from_json_file(json_config)
         self.load_device = comfy.model_management.text_encoder_device()
         offload_device = comfy.model_management.text_encoder_offload_device()

@@ -5,6 +5,8 @@ import comfy.checkpoint_pickle
 import safetensors.torch
 import numpy as np
 from PIL import Image
+import todos
+import pdb
 
 def load_torch_file(ckpt, safe_load=False, device=None):
     if device is None:
@@ -266,9 +268,15 @@ def safetensors_header(safetensors_path, max_size=100*1024*1024):
         return f.read(length_of_header)
 
 def set_attr(obj, attr, value):
-    attrs = attr.split(".")
+    # obj -- ControlNet(...)
+    # attr -- 'time_embed.0.weight'
+    # value.size() -- [1280, 320]
+
+    attrs = attr.split(".") # ['time_embed', '0', 'weight']
     for name in attrs[:-1]:
         obj = getattr(obj, name)
+    # ==> obj -- Linear(...)
+
     prev = getattr(obj, attrs[-1])
     setattr(obj, attrs[-1], torch.nn.Parameter(value))
     del prev

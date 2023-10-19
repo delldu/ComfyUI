@@ -23,6 +23,8 @@ import comfy.model_patcher
 import comfy.lora
 import comfy.t2i_adapter.adapter
 import comfy.supported_models_base
+import todos
+import pdb
 
 def load_model_weights(model, sd):
     m, u = model.load_state_dict(sd, strict=False)
@@ -88,6 +90,7 @@ class CLIP:
             params['dtype'] = torch.float32
 
         self.cond_stage_model = clip(**(params))
+        # self.cond_stage_model -- SDXLClipModel(...) -- clip_l, clip_g
 
         self.tokenizer = tokenizer(embedding_directory=embedding_directory)
         self.patcher = comfy.model_patcher.ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device)
@@ -111,6 +114,8 @@ class CLIP:
         return self.tokenizer.tokenize_with_weights(text, return_word_ids)
 
     def encode_from_tokens(self, tokens, return_pooled=False):
+        todos.debug.output_var("tokens", tokens)
+
         if self.layer_idx is not None:
             self.cond_stage_model.clip_layer(self.layer_idx)
         else:
@@ -151,7 +156,7 @@ class VAE:
         else:
             self.first_stage_model = AutoencoderKL(**(config['params']))
         self.first_stage_model = self.first_stage_model.eval()
-
+        
         m, u = self.first_stage_model.load_state_dict(sd, strict=False)
         if len(m) > 0:
             print("Missing VAE keys", m)
@@ -165,6 +170,7 @@ class VAE:
         self.offload_device = model_management.vae_offload_device()
         self.vae_dtype = model_management.vae_dtype()
         self.first_stage_model.to(self.vae_dtype)
+        #self.first_stage_model -- AutoencoderKL(...)
 
     def decode_tiled_(self, samples, tile_x=64, tile_y=64, overlap = 16):
         steps = samples.shape[0] * comfy.utils.get_tiled_scale_steps(samples.shape[3], samples.shape[2], tile_x, tile_y, overlap)
@@ -205,6 +211,10 @@ class VAE:
             pixel_samples = torch.empty((samples_in.shape[0], 3, round(samples_in.shape[2] * 8), round(samples_in.shape[3] * 8)), device="cpu")
             for x in range(0, samples_in.shape[0], batch_number):
                 samples = samples_in[x:x+batch_number].to(self.vae_dtype).to(self.device)
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # model_forward
+                #   VAEDecode.forward
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 pixel_samples[x:x+batch_number] = torch.clamp((self.first_stage_model.decode(samples).cpu().float() + 1.0) / 2.0, min=0.0, max=1.0)
         except model_management.OOM_EXCEPTION as e:
             print("Warning: Ran out of memory when regular VAE decoding, retrying with tiled VAE decoding.")
@@ -232,6 +242,11 @@ class VAE:
             samples = torch.empty((pixel_samples.shape[0], 4, round(pixel_samples.shape[2] // 8), round(pixel_samples.shape[3] // 8)), device="cpu")
             for x in range(0, pixel_samples.shape[0], batch_number):
                 pixels_in = (2. * pixel_samples[x:x+batch_number] - 1.).to(self.vae_dtype).to(self.device)
+
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # model_forward  
+                #   VAEEncode.forward
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 samples[x:x+batch_number] = self.first_stage_model.encode(pixels_in).cpu().float()
 
         except model_management.OOM_EXCEPTION as e:

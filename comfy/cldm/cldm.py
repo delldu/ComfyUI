@@ -14,6 +14,8 @@ from ..ldm.modules.attention import SpatialTransformer
 from ..ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample
 from ..ldm.util import exists
 import comfy.ops
+import todos
+import pdb
 
 class ControlledUnetModel(UNetModel):
     #implemented in the ldm unet
@@ -277,6 +279,14 @@ class ControlNet(nn.Module):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
 
     def forward(self, x, hint, timesteps, context, y=None, **kwargs):
+        # what's x ???
+        # tensor [x] size: [2, 4, 146, 111], min: -4.152344, max: 4.15625, mean: -0.006306
+        # tensor [hint] size: [1, 3, 1168, 888], min: 0.0, max: 1.0, mean: 0.016251
+        # tensor [timesteps] size: [2], min: 999.0, max: 999.0
+        # tensor [context] size: [2, 77, 2048], min: -809.5, max: 853.5, mean: 0.02327
+        # tensor [y] size: [2, 2816], min: -5.140625, max: 5.101562, mean: 0.157227
+        # kwargs --  {}
+
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
         emb = self.time_embed(t_emb)
 

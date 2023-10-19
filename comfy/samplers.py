@@ -9,12 +9,21 @@ import math
 from comfy import model_base
 import comfy.utils
 
+import todos
+import pdb
+
 def lcm(a, b): #TODO: eventually replace by math.lcm (added in python3.9)
     return abs(a*b) // math.gcd(a, b)
 
 #The main sampling function shared by all the samplers
 #Returns predicted noise
 def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, cond_concat=None, model_options={}, seed=None):
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model_forward
+        #   model_function -- diffusion_model.forward ???
+        #
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
         def get_area_and_mult(cond, x_in, cond_concat_in, timestep_in):
             area = (x_in.shape[2], x_in.shape[3], 0, 0)
             strength = 1.0
@@ -307,6 +316,7 @@ class CFGNoisePredictor(torch.nn.Module):
         super().__init__()
         self.inner_model = model
         self.alphas_cumprod = model.alphas_cumprod
+
     def apply_model(self, x, timestep, cond, uncond, cond_scale, cond_concat=None, model_options={}, seed=None):
         out = sampling_function(self.inner_model.apply_model, x, timestep, uncond, cond, cond_scale, cond_concat, model_options=model_options, seed=seed)
         return out
@@ -601,6 +611,8 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral"
 def ksampler(sampler_name, extra_options={}):
     class KSAMPLER(Sampler):
         def sample(self, model_wrap, sigmas, extra_args, callback, noise, latent_image=None, denoise_mask=None, disable_pbar=False):
+            # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'seed']
+
             extra_args["denoise_mask"] = denoise_mask
             model_k = KSamplerX0Inpaint(model_wrap)
             model_k.latent_image = latent_image
@@ -619,6 +631,10 @@ def ksampler(sampler_name, extra_options={}):
             sigma_min = sigmas[-1]
             if sigma_min == 0:
                 sigma_min = sigmas[-2]
+
+            # sampler_name --- 'euler_ancestral'
+            #     # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'seed']
+            #     # extra_options -- {}
 
             if latent_image is not None:
                 noise += latent_image
@@ -639,7 +655,7 @@ def wrap_model(model):
         model_wrap = k_diffusion_external.CompVisDenoiser(model_denoise, quantize=True)
     return model_wrap
 
-def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model_options={}, latent_image=None, denoise_mask=None, callback=None, disable_pbar=False, seed=None):
+def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas, model_options={}, latent_image=None, denoise_mask=None, callback=None, disable_pbar=False, seed=None):
     positive = positive[:]
     negative = negative[:]
 
@@ -762,7 +778,7 @@ class KSampler:
             sigmas = self.calculate_sigmas(new_steps).to(self.device)
             self.sigmas = sigmas[-(steps + 1):]
 
-    def sample(self, noise, positive, negative, cfg, latent_image=None, start_step=None, last_step=None, force_full_denoise=False, denoise_mask=None, sigmas=None, callback=None, disable_pbar=False, seed=None):
+    def do_sample(self, noise, positive, negative, cfg, latent_image=None, start_step=None, last_step=None, force_full_denoise=False, denoise_mask=None, sigmas=None, callback=None, disable_pbar=False, seed=None):
         if sigmas is None:
             sigmas = self.sigmas
 
@@ -780,6 +796,6 @@ class KSampler:
                 else:
                     return torch.zeros_like(noise)
 
-        sampler = sampler_class(self.sampler)
-
-        return sample(self.model, noise, positive, negative, cfg, self.device, sampler(), sigmas, self.model_options, latent_image=latent_image, denoise_mask=denoise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+        sampler = sampler_class(self.sampler) # # self.sampler -- 'sample_euler_ancestral'
+        print("Set sigma and select sampler as sample_euler_ancestral ...")
+        return sample_shell(self.model, noise, positive, negative, cfg, self.device, sampler(), sigmas, self.model_options, latent_image=latent_image, denoise_mask=denoise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)

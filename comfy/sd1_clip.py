@@ -7,6 +7,8 @@ import traceback
 import zipfile
 from . import model_management
 import contextlib
+import todos
+import pdb
 
 class ClipTokenWeightEncoder:
     def encode_token_weights(self, token_weight_pairs):
@@ -179,6 +181,7 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
         return self(tokens)
 
     def load_sd(self, sd):
+        pdb.set_trace()
         if "text_projection" in sd:
             self.text_projection[:] = sd.pop("text_projection")
         if "text_projection.weight" in sd:

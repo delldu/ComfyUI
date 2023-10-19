@@ -7,6 +7,8 @@ import comfy.model_management
 import numpy as np
 from enum import Enum
 from . import utils
+import todos
+import pdb
 
 class ModelType(Enum):
     EPS = 1
@@ -49,6 +51,19 @@ class BaseModel(torch.nn.Module):
         self.register_buffer('alphas_cumprod_prev', torch.tensor(alphas_cumprod_prev, dtype=torch.float32))
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, c_adm=None, control=None, transformer_options={}):
+        todos.debug.output_var("x", x)
+        todos.debug.output_var("t", t)
+        todos.debug.output_var("c_crossattn", c_crossattn)
+        todos.debug.output_var("c_adm", c_adm)
+        todos.debug.output_var("control", control)
+
+        # for ClipVision
+        # tensor [x] size: [4, 4, 128, 128], min: -2.754989, max: 2.891286, mean: -0.027223
+        # tensor [t] size: [4], min: 0.0, max: 0.0
+        # tensor [c_crossattn] size: [4, 77, 2048], min: 0.0, max: 0.0, mean: 0.0
+        # tensor [c_adm] size: [4, 2816], min: -0.999965, max: 1.0, mean: 0.154741
+        # [control] value: None
+
         if c_concat is not None:
             xc = torch.cat([x] + [c_concat], dim=1)
         else:
@@ -60,6 +75,11 @@ class BaseModel(torch.nn.Module):
         context = context.to(dtype)
         if c_adm is not None:
             c_adm = c_adm.to(dtype)
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model_forward
+        #    self.diffusion_model -- UNetModel.forward(...)
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
         return self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
 
     def get_dtype(self):
@@ -116,7 +136,7 @@ class BaseModel(torch.nn.Module):
 
 def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge=0.0):
     adm_inputs = []
-    weights = []
+    # weights = []
     noise_aug = []
     for unclip_cond in unclip_conditioning:
         for adm_cond in unclip_cond["clip_vision_output"].image_embeds:
@@ -125,15 +145,17 @@ def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge
             noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
             c_adm, noise_level_emb = noise_augmentor(adm_cond.to(device), noise_level=torch.tensor([noise_level], device=device))
             adm_out = torch.cat((c_adm, noise_level_emb), 1) * weight
-            weights.append(weight)
+            # weights.append(weight)
             noise_aug.append(noise_augment)
             adm_inputs.append(adm_out)
 
     if len(noise_aug) > 1:
+        pdb.set_trace()
         adm_out = torch.stack(adm_inputs).sum(0)
         noise_augment = noise_augment_merge
         noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
-        c_adm, noise_level_emb = noise_augmentor(adm_out[:, :noise_augmentor.time_embed.dim], noise_level=torch.tensor([noise_level], device=device))
+        c_adm, noise_level_emb = noise_augmentor(adm_out[:, :noise_augmentor.time_embed.dim], 
+            noise_level=torch.tensor([noise_level], device=device))
         adm_out = torch.cat((c_adm, noise_level_emb), 1)
 
     return adm_out
@@ -164,6 +186,8 @@ class SDXLRefiner(BaseModel):
         self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
+        # kwargs.keys() -- ['device', 'pooled_output', 'unclip_condition', 'width', 'height', 'prompt_type']
+        
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
@@ -191,6 +215,10 @@ class SDXL(BaseModel):
         self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
+        # kwargs -- 
+        # {'device': device(type='cuda', index=0), 'pooled_output': tensor([[ 0.5246, -0.2884, -0.2883,  ..., -0.6900,  1.4370, -1.0179]]), 'control': <comfy.controlnet.ControlLora object at 0x7fee48d770a0>, 
+        #     'width': 1256, 'height': 832, 'prompt_type': 'positive'}
+
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
