@@ -77,7 +77,7 @@ class Upsample(nn.Module):
     """
 
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
-        super().__init__()
+        super(Upsample, self).__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -114,7 +114,7 @@ class Downsample(nn.Module):
     """
 
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
-        super().__init__()
+        super(Downsample, self).__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -163,7 +163,7 @@ class ResBlock(TimestepBlock):
         device=None,
         operations=SDXL.util
     ):
-        super().__init__()
+        super(ResBlock, self).__init__()
         self.channels = channels
         self.emb_channels = emb_channels
         self.dropout = dropout
@@ -230,7 +230,7 @@ class ResBlock(TimestepBlock):
 
 class Timestep(nn.Module):
     def __init__(self, dim):
-        super().__init__()
+        super(Timestep, self).__init__()
         self.dim = dim
 
     def forward(self, t):
@@ -306,7 +306,7 @@ class UNetModel(nn.Module):
         device=None,
         operations=SDXL.util,
     ):
-        super().__init__()
+        super(UNetModel, self).__init__()
         if version == "base_1.0":
             adm_in_channels = 2816
             model_channels = 320
@@ -473,9 +473,9 @@ class UNetModel(nn.Module):
         )
 
         if version == "base_1.0":
-            load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
+            load_diffusion_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
         else:
-            load_diffusion_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")
+            load_diffusion_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
     def forward(self, x, timesteps=None, context=None, y=None, control=None):
         # x.shape -- [2, 4, 104, 157]

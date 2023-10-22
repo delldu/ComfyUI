@@ -35,7 +35,7 @@ class AutoencoderKL(nn.Module):
     """
 
     def __init__(self, embed_dim=4):
-        super().__init__()
+        super(AutoencoderKL, self).__init__()
         ddconfig = {
             "z_channels": 4,
             "resolution": 256,
@@ -78,10 +78,10 @@ class AutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-
+# vae_encode_model
 class VAEEncode(nn.Module):
     def __init__(self, embed_dim=4):
-        super().__init__()
+        super(VAEEncode, self).__init__()
         ddconfig = {
             "z_channels": 4,
             "resolution": 256,
@@ -110,9 +110,10 @@ class VAEEncode(nn.Module):
 
         return output
 
+# vae_decode_model
 class VAEDecode(nn.Module):
     def __init__(self, embed_dim=4):
-        super().__init__()
+        super(VAEDecode, self).__init__()
         ddconfig = {
             "z_channels": 4,
             "resolution": 256,
@@ -147,7 +148,7 @@ def Normalize(in_channels, num_groups=32):
 
 class Downsample(nn.Module):
     def __init__(self, in_channels):
-        super().__init__()
+        super(Downsample, self).__init__()
         self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=0)
 
     def forward(self, x):
@@ -158,7 +159,7 @@ class Downsample(nn.Module):
 
 class Upsample(nn.Module):
     def __init__(self, in_channels):
-        super().__init__()
+        super(Upsample, self).__init__()
         self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
@@ -169,7 +170,7 @@ class Upsample(nn.Module):
 
 class ResnetBlock(nn.Module):
     def __init__(self, *, in_channels, out_channels=None, dropout):
-        super().__init__()
+        super(ResnetBlock, self).__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
         self.out_channels = out_channels
@@ -204,7 +205,7 @@ class ResnetBlock(nn.Module):
 
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
-        super().__init__()
+        super(AttnBlock, self).__init__()
         self.in_channels = in_channels
 
         self.norm = Normalize(in_channels)
@@ -250,7 +251,7 @@ class Encoder(nn.Module):
         resolution=256,
         z_channels=4,
     ):
-        super().__init__()
+        super(Encoder, self).__init__()
         self.ch = ch
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
@@ -330,7 +331,7 @@ class Decoder(nn.Module):
         resolution=256,
         z_channels=4,
     ):
-        super().__init__()
+        super(Decoder, self).__init__()
         self.ch = ch
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks

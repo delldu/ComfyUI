@@ -25,12 +25,10 @@ def state_dict_filter(source_sd, prefix_list, remove_prefix=False):
     keys = list(source_sd.keys())
 
     for prefix in prefix_list:
+        skip_len = len(prefix) if remove_prefix else 0
         for k in keys:
             if k.startswith(prefix):
-                if remove_prefix:
-                    target_sd[k[len(prefix):]] = source_sd.pop(k)
-                else:
-                    target_sd[k] = source_sd.pop(k)
+                target_sd[k[skip_len:]] = source_sd.pop(k)
 
     return target_sd
 
@@ -41,11 +39,8 @@ def state_dict_key_replace(state_dict, keys_to_replace):
             state_dict[keys_to_replace[x]] = state_dict.pop(x)
     return state_dict
 
-def state_dict_prefix_replace(state_dict, replace_prefix, filter_keys=False):
-    if filter_keys:
-        out = {}
-    else:
-        out = state_dict
+def state_dict_prefix_replace(state_dict, replace_prefix):
+    out = state_dict
     for rp in replace_prefix:
         replace = list(map(lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp):])), filter(lambda a: a.startswith(rp), state_dict.keys())))
         for x in replace:
@@ -213,7 +208,6 @@ def load_vaedecode_model_weight(model, model_path="models/sdxl_vae.safetensors")
         print(f"Loading weight from {checkpoint} ...")
 
         state_dict = state_dict_load(checkpoint)
-        state_dict = state_dict_load(checkpoint)
         state_dict = state_dict_filter(state_dict, ["decoder.", "post_quant_conv."], remove_prefix=False)
         model.load_state_dict(state_dict)
     else:
@@ -240,7 +234,7 @@ class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
-        super().__init__()
+        super(Linear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))

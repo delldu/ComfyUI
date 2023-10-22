@@ -23,7 +23,7 @@ class QuickGELUActivation(nn.Module):
 
 class CLIPTextEmbeddings(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPTextEmbeddings, self).__init__()
 
         embed_dim = config.hidden_size # 768
         self.token_embedding = nn.Embedding(config.vocab_size, embed_dim) # (49408, 768)
@@ -47,7 +47,7 @@ class CLIPTextEmbeddings(nn.Module):
 
 class CLIPAttention(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPAttention, self).__init__()
         # self.config = config
         self.embed_dim = config.hidden_size
         self.num_heads = config.num_attention_heads
@@ -96,7 +96,7 @@ class CLIPAttention(nn.Module):
 
 class CLIPMLP(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPMLP, self).__init__()
         # self.config = config
         self.activation_fn = QuickGELUActivation()
 
@@ -112,7 +112,7 @@ class CLIPMLP(nn.Module):
 
 class CLIPEncoderLayer(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPEncoderLayer, self).__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = CLIPAttention(config)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
@@ -139,7 +139,7 @@ class CLIPEncoderLayer(nn.Module):
 
 class CLIPEncoder(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPEncoder, self).__init__()
         # self.config = config
         self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
@@ -166,7 +166,7 @@ def make_causal_mask(x):
 
 class CLIPTextTransformer(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPTextTransformer, self).__init__()
         # self.config = config
         self.embeddings = CLIPTextEmbeddings(config)
         self.encoder = CLIPEncoder(config)
@@ -189,7 +189,7 @@ class CLIPTextTransformer(nn.Module):
 
 class CLIPTextModel(nn.Module): 
     def __init__(self, config):
-        super().__init__()
+        super(CLIPTextModel, self).__init__()
         self.text_model = CLIPTextTransformer(config)
 
     def get_input_embeddings(self) -> nn.Module:
@@ -202,7 +202,7 @@ class CLIPTextModel(nn.Module):
 
 class CLIPVisionEmbeddings(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPVisionEmbeddings, self).__init__()
         self.config = config
         self.embed_dim = config.hidden_size
         self.image_size = config.image_size
@@ -236,7 +236,7 @@ class CLIPVisionEmbeddings(nn.Module):
 
 class CLIPVisionTransformer(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(CLIPVisionTransformer, self).__init__()
         self.config = config
         embed_dim = config.hidden_size
 
@@ -268,7 +268,7 @@ class SDXLCLIPVisionModel(nn.Module):
         CLIPVisionModelWithProjection
     '''
     def __init__(self, config):
-        super().__init__()
+        super(SDXLCLIPVisionModel, self).__init__()
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
 
@@ -293,7 +293,7 @@ class SDXLCLIPVisionModel(nn.Module):
 
 class SDXLClipL(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(SDXLClipL, self).__init__()
         # comfy/sd1_clip_config.json
         config = DictToClass(
             {
@@ -331,7 +331,7 @@ class SDXLClipL(nn.Module):
     def forward(self, tokens):
         outputs = self.transformer(tokens)
         z = outputs.hidden_states[self.layer_idx]
-        if self.layer_norm_hidden_state:
+        if self.layer_norm_hidden_state: # True
             z = self.transformer.text_model.final_layer_norm(z)
         pooled = outputs.pooler_output.float().to(self.text_projection.device) @ self.text_projection.float()
 
@@ -340,7 +340,7 @@ class SDXLClipL(nn.Module):
 
 class SDXLClipG(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(SDXLClipG, self).__init__()
         # clip_config_bigg.json
         config = DictToClass(
             {
@@ -376,7 +376,7 @@ class SDXLClipG(nn.Module):
     def forward(self, tokens):
         outputs = self.transformer(tokens)
         z = outputs.hidden_states[self.layer_idx]
-        if self.layer_norm_hidden_state:
+        if self.layer_norm_hidden_state: # False
             z = self.transformer.text_model.final_layer_norm(z)
         pooled = outputs.pooler_output.float().to(self.text_projection.device) @ self.text_projection.float()
 
@@ -385,12 +385,17 @@ class SDXLClipG(nn.Module):
 
 class SDXLCLIPTextModel(nn.Module):
     def __init__(self, version="base_1.0"):
-        super().__init__()
+        super(SDXLCLIPTextModel, self).__init__()
         if version == "base_1.0":
             self.clip_l = SDXLClipL()
             self.clip_g = SDXLClipG()
         else: # refiner_1.0
             self.clip_g = SDXLClipG()
+
+        if version == "base_1.0":
+            load_base_clip_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+        else:
+            load_refiner_clip_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
     def forward(self, tokens):
         return tokens
@@ -435,10 +440,6 @@ def clip_text_model(version="base_1.0"):
 
     model = SDXLCLIPTextModel(version=version)
     model = model.half()
-    if version == "base_1.0":
-        load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
-    else:
-        load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")
     model = model.eval()
     return model  
 

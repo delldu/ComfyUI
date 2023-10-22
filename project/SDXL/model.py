@@ -1,17 +1,8 @@
-# import torch
-# from comfy.ldm.modules.diffusionmodules.openaimodel import UNetModel
-# from comfy.ldm.modules.encoders.noise_aug_modules import EmbedNoiseAugmentation
-# from comfy.ldm.modules.diffusionmodules.util import make_beta_schedule
-# from comfy.ldm.modules.diffusionmodules.openaimodel import Timestep
-# import comfy.model_management
-# from enum import Enum
-# from . import utils
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from tqdm import tqdm, trange
 
 from SDXL.unet import (
     Timestep,
@@ -23,17 +14,59 @@ from SDXL.util import (
 from SDXL.noise import (
     EmbedNoiseAugmentation,
 )
+from SDXL.vae import (
+    VAEEncode,
+    VAEDecode,
+)
+from SDXL.clip import (
+    SDXLCLIPTextModel,
+)
 
 import todos
 import pdb
 
+def append_dims(x, target_dims):
+    """Appends dimensions to the end of a tensor until it has target_dims dimensions."""
+    dims_to_append = target_dims - x.ndim
+    if dims_to_append < 0:
+        raise ValueError(f'input has {x.ndim} dims but target_dims is {target_dims}, which is less')
+    return x[(...,) + (None,) * dims_to_append]
+
+
+def get_ancestral_step(sigma_from, sigma_to):
+    sigma_up = min(sigma_to, (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5)
+    sigma_down = (sigma_to ** 2 - sigma_up ** 2) ** 0.5
+    return sigma_down, sigma_up
+
+def to_d(x, sigma, denoised):
+    """Converts a denoiser output to a Karras ODE derivative."""
+    return (x - denoised) / append_dims(sigma, x.ndim)
+
+# KarrasScheduler -- sigma_min, sigma_max ...
+def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
+    """Constructs the noise schedule of Karras et al. (2022)."""
+
+    ramp = torch.linspace(0, 1, n)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho # size() -- 13
+
+    return torch.cat([sigmas, sigmas.new_zeros([1])])
+
 class BaseModel(nn.Module):
     def __init__(self, version):
-        super().__init__()
+        super(BaseModel, self).__init__()
         self.scale_factor = 0.13025
-        self.diffusion_model = UNetModel(version=version)
-        self.register_schedule(beta_schedule="linear", timesteps=1000, 
-            linear_start=0.00085, linear_end=0.012)
+        self.diffusion_model = nn.Identity() # UNetModel(version=version)
+        self.vae_encode_model = nn.Identity() # VAEEncode()
+        self.vae_decode_model = nn.Identity() # VAEDecode()
+        self.clip_text_model = nn.Identity() # SDXLCLIPTextModel(version=version)
+
+        # Option models ...
+        self.clip_vision_model = nn.Identity()
+        self.control_lora_model = nn.Identity()
+
+        self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
         # beta_schedule = 'linear'
@@ -53,12 +86,42 @@ class BaseModel(nn.Module):
         self.linear_start = linear_start
         self.linear_end = linear_end
 
+        sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
+        log_sigmas = np.log(sigmas)
+
         self.register_buffer('betas', torch.tensor(betas, dtype=torch.float32))
         self.register_buffer('alphas_cumprod', torch.tensor(alphas_cumprod, dtype=torch.float32))
+        self.register_buffer('sigmas', torch.tensor(sigmas, dtype=torch.float32))
+        self.register_buffer('log_sigmas', torch.tensor(log_sigmas, dtype=torch.float32))
+
+    def sigma_to_t(self, sigma):
+        log_sigma = sigma.log()
+        dists = log_sigma - self.log_sigmas[:, None]
+
+        return dists.abs().argmin(dim=0).view(sigma.shape)
+
+    def t_to_sigma(self, t):
+        t = t.float()
+        low_idx = t.floor().long()
+        high_idx = t.ceil().long()
+        w = t.frac()
+        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
+
+        return log_sigma.exp()
+
+
+    def set_steps(self, steps, denoise=1.0):
+        denoise = min(0.1, denoise)
+        if denoise > 0.9999:
+            sigmas = get_karras_sigmas(steps)
+        else:
+            denoise = min(denoise, 0.01)
+            new_steps = int(steps/denoise)
+            sigmas = get_karras_sigmas(new_steps)
+            sigmas = sigmas[-(steps + 1):]
+        return sigmas
 
     def forward(self, x, t, c_crossattn=None, c_adm=None, control=None):
-        print("CheckPoint BaseModel.forward -- diffusion_model, get_dtype()=", self.diffusion_model.dtype)
-
         x = x.to(self.diffusion_model.dtype)
         t = t.to(self.diffusion_model.dtype)
         context = c_crossattn.to(self.diffusion_model.dtype)
@@ -77,25 +140,36 @@ class BaseModel(nn.Module):
         return latent / self.scale_factor
 
 
+    def euler_ancestral_sample(self, x, sigmas, extra_args=None):
+        """Ancestral sampling with Euler method steps."""
+
+        # xxxx_refiner 1
+        extra_args = {}
+        s_in = x.new_ones([x.shape[0]])
+        for i in trange(len(sigmas) - 1):
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # model_forward
+            # model --
+            #
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+            with torch.no_grad():
+                denoised = self.diffusion_model(x) # , sigmas[i] * s_in, **extra_args)
+
+            sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
+            d = to_d(x, sigmas[i], denoised) 
+
+            # Euler method
+            dt = sigma_down - sigmas[i]
+            x = x + d * dt
+            if sigmas[i + 1] > 0:
+                x = x + torch.randn_like(x) * sigma_up
+        return x
+
+
+
+
 def unclip_adm(unclip_condition, device, noise_augmentor, noise_augment_merge=0.0):
-    # unclip_condition[0].keys() -- ['clip_vision_output', 'strength', 'noise_augmentation']
-
-    # unclip_condition[0]['clip_vision_output']
-    # unclip_condition[0]['clip_vision_output'].image_embeds.size() -- [1, 1280]
-    # unclip_condition[0]['clip_vision_output'].last_hidden_state.size() -- [1, 257, 1664]
-    # unclip_condition[0]['clip_vision_output'].hidden_states -- None
-    # unclip_condition[0]['clip_vision_output'].attentions -- None
-
-    # unclip_condition[0]['strength'] -- 1.0
-    # unclip_condition[0]['noise_augmentation'] -- 0.0
-
-    # noise_augmentor
-    # EmbedNoiseAugmentation(
-    #   (time_embed): Timestep()
-    # )
-    # noise_augmentor.max_noise_level -- 1000.0
-
-
     adm_inputs = []
     noise_aug = []
     for unclip_cond in unclip_condition:
@@ -135,8 +209,8 @@ def sdxl_pooled(args, noise_augmentor):
 
 
 class SDXL(BaseModel):
-    def __init__(self, version="base_1.0"):
-        super().__init__(version=version)
+    def __init__(self):
+        super(SDXL, self).__init__(version="base_1.0")
         self.embedder = Timestep(256)
         self.noise_augmentor = EmbedNoiseAugmentation()
 
@@ -165,8 +239,8 @@ class SDXL(BaseModel):
 
 
 class SDXLRefiner(BaseModel):
-    def __init__(self, version="refiner_1.0"):
-        super().__init__(version=version)
+    def __init__(self):
+        super(SDXLRefiner, self).__init__(version="refiner_1.0")
         self.embedder = Timestep(256)
         self.noise_augmentor = EmbedNoiseAugmentation()
 
@@ -193,30 +267,58 @@ class SDXLRefiner(BaseModel):
         flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(clip_pooled.shape[0], 1)
         return torch.cat((clip_pooled.to(flat.device), flat), dim=1)
 
-
-if __name__ == "__main__":
+def test_sdxl():
     model = SDXL()
     model = model.eval()
     # model = torch.jit.script(model)
+    model.cuda()
 
-    x = torch.randn(1, 4, 146, 111)
-    t = torch.randn(1)
-    c_crossattn = torch.randn(1, 77, 2048)
-    c_adm = torch.randn(1, 2816)
+    x = torch.randn(1, 4, 146, 111).cuda()
+    t = torch.randn(1).cuda()
+    c_crossattn = torch.randn(1, 77, 2048).cuda()
+    c_adm = torch.randn(1, 2816).cuda()
+
+
     control = {
         "input":[],
-        "middle": [torch.randn(1, 1280, 37, 28)],
-        "output": [torch.randn(1, 320, 146, 111), torch.randn(1, 320, 146, 111), torch.randn(1, 320, 146, 111),
-            torch.randn(1, 320, 73, 56), torch.randn(1, 640, 73, 56), torch.randn(1, 640, 73, 56),
-            torch.randn(1, 640, 37, 28), torch.randn(1, 1280, 37, 28), torch.randn(1, 1280, 37, 28),
+        "middle": [torch.randn(1, 1280, 37, 28).cuda()],
+        "output": [
+            torch.randn(1, 320, 146, 111).cuda(), torch.randn(1, 320, 146, 111).cuda(), torch.randn(1, 320, 146, 111).cuda(),
+            torch.randn(1, 320, 73, 56).cuda(), torch.randn(1, 640, 73, 56).cuda(), torch.randn(1, 640, 73, 56).cuda(),
+            torch.randn(1, 640, 37, 28).cuda(), torch.randn(1, 1280, 37, 28).cuda(), torch.randn(1, 1280, 37, 28).cuda(),
         ],
     }
-
-    # pdb.set_trace()
-    # model.diffusion_model.dtype
 
     with torch.no_grad():
         output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
 
     print(output.size()) # [1, 4, 146, 111]
     # print(model)
+
+
+
+def test_refiner():
+    model = SDXLRefiner()
+    model = model.eval()
+    # model = torch.jit.script(model)
+    model.cuda()
+
+    x = torch.randn(1, 4, 146, 111).cuda()
+    t = torch.randn(1).cuda()
+    c_crossattn = torch.randn(1, 77, 1280).cuda()
+    c_adm = torch.randn(1, 2560).cuda()
+    control = None
+
+    sigmas = model.set_steps(10, denoise=0.2).to(x.device)
+    output = model.euler_ancestral_sample(x, sigmas)
+    # with torch.no_grad():
+    #     output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
+
+    print(output.size()) # [1, 4, 146, 111]
+    print(model)
+
+
+if __name__ == "__main__":
+    # test_sdxl()
+
+    test_refiner()

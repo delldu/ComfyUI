@@ -93,7 +93,9 @@ def whitespace_clean(text):
 
 
 class SimpleTokenizer(object):
-    def __init__(self, bpe_path: str = default_bpe()):
+    def __init__(self, bpe_path: str = default_bpe(), pad_token=-1):
+        self.max_length = 77
+
         self.byte_encoder = bytes_to_unicode()
         self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
         merges = gzip.open(bpe_path).read().decode("utf-8").split('\n')
@@ -147,6 +149,12 @@ class SimpleTokenizer(object):
         # len(self.byte_encoder) -- 256
         # len(vocab) -- 49408
         # self.cache -- {'<|startoftext|>': '<|startoftext|>', '<|endoftext|>': '<|endoftext|>'}
+        self.start_token = self.encoder['<|startoftext|>']
+        self.stop_token = self.encoder['<|endoftext|>']
+        if pad_token != 0:
+            self.pad_token = self.stop_token
+        else:
+            self.pad_token = 0
 
     def bpe(self, token):
         # token -- 'hello'
@@ -216,6 +224,12 @@ class SimpleTokenizer(object):
             # self.encoder -- {..., 'diffuser</w>': 49400, ... }
             bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
             # self.encoder['a</w>'] -- 320
+
+        if len(bpe_tokens) > self.max_length:
+            bpe_tokens = bpe_tokens[:self.max_length]
+        else:
+            fill_length = self.max_length - len(bpe_tokens)
+            bpe_tokens += [self.pad_token] * fill_length
 
         # bpe_tokens -- [320, 22697]
         # self.decoder[320] -- 'a</w>'

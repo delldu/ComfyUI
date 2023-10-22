@@ -71,7 +71,7 @@ class ControlLoraOps:
     class Linear(nn.Module):
         def __init__(self, in_features: int, out_features: int, bias: bool = True,
                     device=None, dtype=None) -> None:
-            super().__init__()
+            super(ControlLoraOps, self).__init__()
             # in_features = 320
             # out_features = 1280
             # bias = True
@@ -106,7 +106,7 @@ class ControlLoraOps:
             device=None,
             dtype=None
         ):
-            super().__init__()
+            super(Conv2d, self).__init__()
             self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
@@ -161,7 +161,7 @@ class ControlNet(nn.Module):
         device=None,
         operations=ControlLoraOps(),
     ):
-        super().__init__()
+        super(ControlNet, self).__init__()
         # operations = <comfy.controlnet.ControlLoraOps object>
 
         assert use_spatial_transformer == True, "use_spatial_transformer has to be true"
