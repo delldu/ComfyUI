@@ -44,7 +44,6 @@ class AbstractLowScaleModel(nn.Module):
     def q_sample(self, x_start, t, noise=None):
         # noise.size() -- [1, 1280]
         noise = default(noise, lambda: torch.randn_like(x_start))
-        pdb.set_trace()
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
@@ -55,15 +54,15 @@ class AbstractLowScaleModel(nn.Module):
         return x
 
 
-class SimpleImageConcat(AbstractLowScaleModel):
-    # no noise level conditioning
-    def __init__(self):
-        super(SimpleImageConcat, self).__init__(noise_schedule_config=None)
-        self.max_noise_level = 0
+# class SimpleImageConcat(AbstractLowScaleModel):
+#     # no noise level conditioning
+#     def __init__(self):
+#         super(SimpleImageConcat, self).__init__(noise_schedule_config=None)
+#         self.max_noise_level = 0
 
-    def forward(self, x):
-        # fix to constant noise level
-        return x, torch.zeros(x.shape[0], device=x.device).long()
+#     def forward(self, x):
+#         # fix to constant noise level
+#         return x, torch.zeros(x.shape[0], device=x.device).long()
 
 
 class ImageConcatWithNoiseAugmentation(AbstractLowScaleModel):

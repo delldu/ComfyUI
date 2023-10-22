@@ -54,6 +54,13 @@ class ClipVisionModel():
         with precision_scope(comfy.model_management.get_autocast_device(self.load_device), torch.float32):
             outputs = self.model(pixel_values=pixel_values, output_hidden_states=True)
 
+        # outputs -- {
+        #     "image_embeds": image_embeds,
+        #     "last_hidden_state": vision_outputs["last_hidden_state"],
+        #     "hidden_states": vision_outputs["hidden_states"],
+        #     "attentions": vision_outputs["attentions"],
+        # }
+
         for k in outputs:
             t = outputs[k]
             if t is not None:

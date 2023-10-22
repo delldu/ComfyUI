@@ -7,19 +7,29 @@ import torchsde
 from tqdm.auto import trange, tqdm
 
 from . import utils
+import todos
 import pdb
 
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
 
-def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
+# KarrasScheduler -- sigma_min, sigma_max ...
+def get_sigmas_karras(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
+
+    # n = 13
+    # sigma_min = 0.029167532920837402
+    # sigma_max = 14.614642143249512
+    # rho = 7.0
+    # device = 'cpu'
+
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
-    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-    return append_zero(sigmas).to(device)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho # size() -- 13
+
+    return append_zero(sigmas).to(device) # size() -- 14
 
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
@@ -126,6 +136,7 @@ class BrownianTreeNoiseSampler:
 @torch.no_grad()
 def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
+
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
@@ -137,9 +148,16 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
-        # model --- CompVisDenoiser(...)
+        # model --
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model --
+        # KSamplerX0Inpaint(
+        #   (inner_model): CompVisDenoiser(
+        #     (inner_model): CFGNoisePredictor(
+        #       (inner_model): SDXLRefiner(
+        #         (diffusion_model): UNetModel(...)))))
+
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
@@ -151,22 +169,53 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
 
 
 @torch.no_grad()
-def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
+def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., 
+    s_noise=1., noise_sampler=None):
     """Ancestral sampling with Euler method steps."""
+
+    # tensor [x] size: [1, 4, 75, 57], min: -3.324396, max: 3.54762, mean: -0.025742
+    # tensor [sigmas] size: [11], min: 0.0, max: 0.149319, mean: 0.07029
+
+    # -----------------------------------------------------------------------------------------------
+    # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
+    # tensor [extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082
+    # extra_args['cond'][0][1] is dict:
+    #     tensor [pooled_output] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
+    #     tensor [adm_encoded] size: [1, 2560], min: -3.958434, max: 3.203121, mean: 0.187823
+    # tensor [extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
+    # extra_args['uncond'][0][1] is dict:
+    #     tensor [pooled_output] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
+    #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
+    # extra_args['cond_scale'] value: 7.5
+    # extra_args['model_options'] is dict:
+    #     [transformer_options] value: {}
+    # extra_args['denoise_mask'] -- None
+
+    # xxxx_refiner 1
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
-        # model --- CompVisDenoiser(...)
+        # model --
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model --
+        # KSamplerX0Inpaint(
+        #   (inner_model): CompVisDenoiser(
+        #     (inner_model): CFGNoisePredictor(
+        #       (inner_model): SDXLRefiner(
+        #         (diffusion_model): UNetModel(...)))))
+
+        # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
         denoised = model(x, sigmas[i] * s_in, **extra_args)
+        # tensor [denoised] size: [1, 4, 75, 57], min: -2.845827, max: 3.328772, mean: -0.026764
+
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        d = to_d(x, sigmas[i], denoised)
+        d = to_d(x, sigmas[i], denoised) # (x - denoised) / utils.append_dims(sigma, x.ndim)
         # Euler method
         dt = sigma_down - sigmas[i]
         x = x + d * dt

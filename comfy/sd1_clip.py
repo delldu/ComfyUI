@@ -169,11 +169,11 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
                 z = outputs.pooler_output[:, None, :]
             else:
                 z = outputs.hidden_states[self.layer_idx]
-                if self.layer_norm_hidden_state:
+                if self.layer_norm_hidden_state: # True
                     z = self.transformer.text_model.final_layer_norm(z)
 
             pooled_output = outputs.pooler_output
-            if self.text_projection is not None:
+            if self.text_projection is not None: # True
                 pooled_output = pooled_output.float().to(self.text_projection.device) @ self.text_projection.float()
         return z.float(), pooled_output.float()
 

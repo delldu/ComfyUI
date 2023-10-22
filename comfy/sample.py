@@ -88,28 +88,34 @@ def prepare_sampling(model, noise_shape, positive, negative, noise_mask):
     return real_model, positive_copy, negative_copy, noise_mask, models
 
 
-def start_sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False, noise_mask=None, sigmas=None, callback=None, disable_pbar=False, seed=None):
+def start_sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, 
+    denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False, 
+    noise_mask=None, sigmas=None, callback=None, disable_pbar=False, seed=None):
     real_model, positive_copy, negative_copy, noise_mask, models = prepare_sampling(model, noise.shape, positive, negative, noise_mask)
     # real_model -- SDXL((diffusion_model): UNetModel(...))
     # positive_copy is list: len = 1
     #     list [item] len: 2
     #         tensor [item] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023275
     #     [item] value: '{'pooled_output': tensor([[ 0.723000,  0.252679,  0.096206,  ..., -0.321235, -1.000728,
-    #          -0.789588]]), 'control': <comfy.controlnet.ControlLora object at 0x7f70f97399d0>, 'control_apply_to_uncond': False}'
+    #          -0.789588]]), 'control': <comfy.controlnet.ControlLora object>, 'control_apply_to_uncond': False}'
     # negative_copy is list: len = 1
     #     list [item] len: 2
     #         tensor [item] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023284
     #     [item] value: '{'pooled_output': tensor([[ 0.954564,  0.917528, -0.207402,  ..., -0.011250,  0.385467,
-    #          -0.650592]]), 'control': <comfy.controlnet.ControlLora object at 0x7f70f97399d0>, 'control_apply_to_uncond': False}'
+    #          -0.650592]]), 'control': <comfy.controlnet.ControlLora object>, 'control_apply_to_uncond': False}'
     # noise_mask -- None
     # models -- []
 
     noise = noise.to(model.load_device)
     latent_image = latent_image.to(model.load_device)
 
-    sampler = comfy.samplers.KSampler(real_model, steps=steps, device=model.load_device, sampler=sampler_name, scheduler=scheduler, denoise=denoise, model_options=model.model_options)
+    # xxxx_root
+    sampler = comfy.samplers.KSampler(real_model, steps=steps, device=model.load_device, sampler=sampler_name, 
+        scheduler=scheduler, denoise=denoise, model_options=model.model_options)
 
-    samples = sampler.do_sample(noise, positive_copy, negative_copy, cfg=cfg, latent_image=latent_image, start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, denoise_mask=noise_mask, sigmas=sigmas, callback=callback, disable_pbar=disable_pbar, seed=seed)
+    samples = sampler.do_sample(noise, positive_copy, negative_copy, cfg=cfg, latent_image=latent_image, 
+        start_step=start_step, last_step=last_step, force_full_denoise=force_full_denoise, 
+        denoise_mask=noise_mask, sigmas=sigmas, callback=callback, disable_pbar=disable_pbar, seed=seed)
     samples = samples.cpu()
 
     cleanup_additional_models(models)

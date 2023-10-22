@@ -7,13 +7,13 @@ import pdb
 class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
     def __init__(self, *args, clip_stats_path=None, timestep_dim=256, **kwargs):
         super().__init__(*args, **kwargs)
-        if clip_stats_path is None:
+        if clip_stats_path is None: # True for refiner model
             clip_mean, clip_std = torch.zeros(timestep_dim), torch.ones(timestep_dim)
         else:
             clip_mean, clip_std = torch.load(clip_stats_path, map_location="cpu")
         self.register_buffer("data_mean", clip_mean[None, :], persistent=False)
         self.register_buffer("data_std", clip_std[None, :], persistent=False)
-        self.time_embed = Timestep(timestep_dim)
+        self.time_embed = Timestep(timestep_dim) # timestep_dim == 1280 for refiner model
 
     def scale(self, x):
         # re-normalize to centered mean and unit variance
@@ -28,6 +28,7 @@ class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
     def forward(self, x, noise_level=None):
         todos.debug.output_var("x", x)
         todos.debug.output_var("noise_level", noise_level)
+        # revision ==> pdb.set_trace()
 
         if noise_level is None:
             noise_level = torch.randint(0, self.max_noise_level, (x.shape[0],), device=x.device).long()

@@ -605,9 +605,12 @@ class UNetModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+        # kwargs -- {}
+
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0
         transformer_patches = transformer_options.get("patches", {})
+        # transformer_options -- {'cond_or_uncond': [1, 0], 'original_shape': [2, 4, 75, 57], 'current_index': 0}
 
         assert (y is not None) == (
             self.num_classes is not None

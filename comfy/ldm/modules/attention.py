@@ -388,6 +388,7 @@ class BasicTransformerBlock(nn.Module):
         extra_options["dim_head"] = self.d_head
 
         if "patches_replace" in transformer_options:
+            pdb.set_trace()
             transformer_patches_replace = transformer_options["patches_replace"]
         else:
             transformer_patches_replace = {}
@@ -400,6 +401,7 @@ class BasicTransformerBlock(nn.Module):
         value_attn1 = None
 
         if "attn1_patch" in transformer_patches:
+            pdb.set_trace()
             patch = transformer_patches["attn1_patch"]
             if context_attn1 is None:
                 context_attn1 = n
@@ -417,6 +419,7 @@ class BasicTransformerBlock(nn.Module):
             block_attn1 = block
 
         if block_attn1 in attn1_replace_patch:
+            pdb.set_trace()
             if context_attn1 is None:
                 context_attn1 = n
                 value_attn1 = n
@@ -429,12 +432,14 @@ class BasicTransformerBlock(nn.Module):
             n = self.attn1(n, context=context_attn1, value=value_attn1)
 
         if "attn1_output_patch" in transformer_patches:
+            pdb.set_trace()
             patch = transformer_patches["attn1_output_patch"]
             for p in patch:
                 n = p(n, extra_options)
 
         x += n
         if "middle_patch" in transformer_patches:
+            pdb.set_trace()
             patch = transformer_patches["middle_patch"]
             for p in patch:
                 x = p(x, extra_options)
@@ -444,6 +449,7 @@ class BasicTransformerBlock(nn.Module):
         context_attn2 = context
         value_attn2 = None
         if "attn2_patch" in transformer_patches:
+            pdb.set_trace()
             patch = transformer_patches["attn2_patch"]
             value_attn2 = context_attn2
             for p in patch:
@@ -455,6 +461,7 @@ class BasicTransformerBlock(nn.Module):
             block_attn2 = block
 
         if block_attn2 in attn2_replace_patch:
+            pdb.set_trace()
             if value_attn2 is None:
                 value_attn2 = context_attn2
             n = self.attn2.to_q(n)
@@ -466,6 +473,7 @@ class BasicTransformerBlock(nn.Module):
             n = self.attn2(n, context=context_attn2, value=value_attn2)
 
         if "attn2_output_patch" in transformer_patches:
+            pdb.set_trace()
             patch = transformer_patches["attn2_output_patch"]
             for p in patch:
                 n = p(n, extra_options)

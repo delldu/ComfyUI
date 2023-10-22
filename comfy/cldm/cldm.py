@@ -275,6 +275,9 @@ class ControlNet(nn.Module):
         self.middle_block_out = self.make_zero_conv(ch, operations=operations)
         self._feature_size += ch
 
+        # canny lora ==> pdb.set_trace()
+        # self.model_channels
+
     def make_zero_conv(self, channels, operations=None):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
 

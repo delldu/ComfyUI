@@ -828,16 +828,51 @@ class unCLIPConditioning:
         if strength == 0:
             return (conditioning, )
 
+        # tensor [conditioning[0][0]] size: [1, 77, 2048], min: 0.0, max: 0.0, mean: 0.0
+        # conditioning[0][1] is dict:
+        #     tensor [pooled_output] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
+
+        # clip_vision_output -- <class 'transformers.models.clip.modeling_clip.CLIPVisionModelOutput'>
+        # clip_vision_output.image_embeds.size() -- [1, 1280]
+        # clip_vision_output.last_hidden_state.size() -- [1, 257, 1664]
+        # clip_vision_output.hidden_states -- None
+        # clip_vision_output.attentions -- None
+        # strength -- 1.0
+        # noise_augmentation -- 0.0
+
         c = []
         for t in conditioning:
+            # revision ==> pdb.set_trace()
             o = t[1].copy()
-            x = {"clip_vision_output": clip_vision_output, "strength": strength, "noise_augmentation": noise_augmentation}
+            x = {"clip_vision_output": clip_vision_output, "strength": strength, 
+                    "noise_augmentation": noise_augmentation}
             if "unclip_conditioning" in o:
+                pdb.set_trace()
                 o["unclip_conditioning"] = o["unclip_conditioning"][:] + [x]
             else:
                 o["unclip_conditioning"] = [x]
             n = [t[0], o]
             c.append(n)
+
+        # tensor [c[0][0]] size: [1, 77, 2048], min: 0.0, max: 0.0, mean: 0.0
+        # c[0][1] is dict:
+        #     tensor [pooled_output] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
+        #     list [unclip_conditioning] len: 1
+        #     [item] value: '{'clip_vision_output': CLIPVisionModelOutput(image_embeds=tensor([[-0.533872,  3.333803, -0.678505,  ..., -2.421016, -2.733607,
+        #           0.656875]]), last_hidden_state=tensor([[[-4.073564, -3.401794, -2.535931,  ..., -1.039717,  1.915481,
+        #           -0.377894],
+        #          [-2.325997, -0.086512,  0.133103,  ..., -1.644961,  2.748995,
+        #            1.686785],
+        #          [-3.587685,  0.271179, -1.310802,  ..., -0.516954,  3.512373,
+        #            1.208619],
+        #          ...,
+        #          [-0.252852, -0.335301, -2.916028,  ..., -0.006915,  0.656954,
+        #            3.088984],
+        #          [ 0.113947, -5.641780, -0.418418,  ...,  0.432994,  0.152186,
+        #           -0.313257],
+        #          [-0.903907,  2.624458, -1.297092,  ...,  4.153544, -0.063884,
+        #            1.956106]]]), hidden_states=None, attentions=None), 'strength': 1.0, 'noise_augmentation': 0.01}'
+
         return (c, )
 
 class GLIGENLoader:
@@ -1206,9 +1241,10 @@ def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, 
 
     callback = latent_preview.prepare_callback(model, steps)
     disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-    samples = comfy.sample.start_sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image,
-                                  denoise=denoise, disable_noise=disable_noise, start_step=start_step, last_step=last_step,
-                                  force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+    samples = comfy.sample.start_sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, 
+                    latent_image, denoise=denoise, disable_noise=disable_noise, start_step=start_step,
+                    last_step=last_step, force_full_denoise=force_full_denoise, noise_mask=noise_mask,
+                    callback=callback, disable_pbar=disable_pbar, seed=seed)
     out = latent.copy()
     out["samples"] = samples
     return (out, )
@@ -1236,7 +1272,8 @@ class KSampler:
     CATEGORY = "sampling"
 
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=1.0):
-        return common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=denoise)
+        return common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, 
+            denoise=denoise)
 
 class KSamplerAdvanced:
     @classmethod
@@ -1263,14 +1300,17 @@ class KSamplerAdvanced:
 
     CATEGORY = "sampling"
 
-    def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, return_with_leftover_noise, denoise=1.0):
+    def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, 
+        latent_image, start_at_step, end_at_step, return_with_leftover_noise, denoise=1.0):
         force_full_denoise = True
         if return_with_leftover_noise == "enable":
             force_full_denoise = False
         disable_noise = False
         if add_noise == "disable":
             disable_noise = True
-        return common_ksampler(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=denoise, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step, force_full_denoise=force_full_denoise)
+        return common_ksampler(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, 
+            latent_image, denoise=denoise, disable_noise=disable_noise, 
+            start_step=start_at_step, last_step=end_at_step, force_full_denoise=force_full_denoise)
 
 class SaveImage:
     def __init__(self):

@@ -53,9 +53,24 @@ class BaseModel(torch.nn.Module):
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, c_adm=None, control=None, transformer_options={}):
         todos.debug.output_var("x", x)
         todos.debug.output_var("t", t)
+        todos.debug.output_var("c_concat", c_concat)
         todos.debug.output_var("c_crossattn", c_crossattn)
         todos.debug.output_var("c_adm", c_adm)
         todos.debug.output_var("control", control)
+        todos.debug.output_var("transformer_options", transformer_options)
+
+        # for refine model
+        # tensor [x] size: [2, 4, 75, 57], min: -4.223927, max: 4.486642, mean: -0.0045
+        # tensor [t] size: [2], min: 797.0, max: 797.0
+        # [c_concat] value: None
+        # tensor [c_crossattn] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.032304
+        # tensor [c_adm] size: [2, 2560], min: -3.958434, max: 3.409507, mean: 0.195633
+        # [control] value: None
+        # transformer_options is dict:
+        #     list [cond_or_uncond] len: 2
+        #     [item] value: '1'
+        #     [item] value: '0'
+        # self.latent_format.scale_factor -- 0.13025
 
         # for ClipVision
         # tensor [x] size: [4, 4, 128, 128], min: -2.754989, max: 2.891286, mean: -0.027223
@@ -65,6 +80,7 @@ class BaseModel(torch.nn.Module):
         # [control] value: None
 
         if c_concat is not None:
+            pdb.set_trace()
             xc = torch.cat([x] + [c_concat], dim=1)
         else:
             xc = x
@@ -88,8 +104,8 @@ class BaseModel(torch.nn.Module):
     def is_adm(self):
         return self.adm_channels > 0
 
-    def encode_adm(self, **kwargs):
-        return None
+    # def encode_adm(self, **kwargs):
+    #     return None
 
     def load_model_weights(self, sd, unet_prefix=""):
         to_load = {}
@@ -135,28 +151,27 @@ class BaseModel(torch.nn.Module):
         self.concat_keys = ("mask", "masked_image")
 
 def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge=0.0):
-    adm_inputs = []
-    # weights = []
-    noise_aug = []
+    # adm_inputs = []
+    # noise_aug = []
     for unclip_cond in unclip_conditioning:
         for adm_cond in unclip_cond["clip_vision_output"].image_embeds:
             weight = unclip_cond["strength"]
             noise_augment = unclip_cond["noise_augmentation"]
             noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
-            c_adm, noise_level_emb = noise_augmentor(adm_cond.to(device), noise_level=torch.tensor([noise_level], device=device))
+            c_adm, noise_level_emb = noise_augmentor(adm_cond.to(device), 
+                noise_level=torch.tensor([noise_level], device=device))
             adm_out = torch.cat((c_adm, noise_level_emb), 1) * weight
-            # weights.append(weight)
-            noise_aug.append(noise_augment)
-            adm_inputs.append(adm_out)
+            # noise_aug.append(noise_augment)
+            # adm_inputs.append(adm_out)
 
-    if len(noise_aug) > 1:
-        pdb.set_trace()
-        adm_out = torch.stack(adm_inputs).sum(0)
-        noise_augment = noise_augment_merge
-        noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
-        c_adm, noise_level_emb = noise_augmentor(adm_out[:, :noise_augmentor.time_embed.dim], 
-            noise_level=torch.tensor([noise_level], device=device))
-        adm_out = torch.cat((c_adm, noise_level_emb), 1)
+    # if len(noise_aug) > 1:
+    #     pdb.set_trace()
+    #     adm_out = torch.stack(adm_inputs).sum(0)
+    #     noise_augment = noise_augment_merge
+    #     noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
+    #     c_adm, noise_level_emb = noise_augmentor(adm_out[:, :noise_augmentor.time_embed.dim], 
+    #         noise_level=torch.tensor([noise_level], device=device))
+    #     adm_out = torch.cat((c_adm, noise_level_emb), 1)
 
     return adm_out
 
@@ -175,6 +190,7 @@ class SD21UNCLIP(BaseModel):
 
 def sdxl_pooled(args, noise_augmentor):
     if "unclip_conditioning" in args:
+        # revision ==> pdb.set_trace()
         return unclip_adm(args.get("unclip_conditioning", None), args["device"], noise_augmentor)[:,:1280]
     else:
         return args["pooled_output"]
@@ -183,12 +199,15 @@ class SDXLRefiner(BaseModel):
     def __init__(self, model_config, model_type=ModelType.EPS, device=None):
         super().__init__(model_config, model_type, device=device)
         self.embedder = Timestep(256)
-        self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
+        # self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
-        # kwargs.keys() -- ['device', 'pooled_output', 'unclip_condition', 'width', 'height', 'prompt_type']
-        
-        clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
+        # for refine model
+        # kwargs.keys() -- ['device', 'pooled_output', 'width', 'height', 'prompt_type']
+        # kwargs -- {'device': device(type='cuda', index=0), 'pooled_output': tensor([[-0.087919, -1.548311, -0.571016,  ...,  0.208579, -2.006104,
+        #  -0.290721]]), 'width': 456, 'height': 600, 'prompt_type': 'positive'}
+
+        clip_pooled = kwargs["pooled_output"] # xxxx8888 sdxl_pooled(kwargs, self.noise_augmentor)
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
         crop_w = kwargs.get("crop_w", 0)

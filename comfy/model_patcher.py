@@ -47,14 +47,14 @@ class ModelPatcher:
             return True
         return False
 
-    def set_model_sampler_cfg_function(self, sampler_cfg_function):
-        if len(inspect.signature(sampler_cfg_function).parameters) == 3:
-            self.model_options["sampler_cfg_function"] = lambda args: sampler_cfg_function(args["cond"], args["uncond"], args["cond_scale"]) #Old way
-        else:
-            self.model_options["sampler_cfg_function"] = sampler_cfg_function
+    # def set_model_sampler_cfg_function(self, sampler_cfg_function):
+    #     if len(inspect.signature(sampler_cfg_function).parameters) == 3:
+    #         self.model_options["sampler_cfg_function"] = lambda args: sampler_cfg_function(args["cond"], args["uncond"], args["cond_scale"]) #Old way
+    #     else:
+    #         self.model_options["sampler_cfg_function"] = sampler_cfg_function
 
-    def set_model_unet_function_wrapper(self, unet_wrapper_function):
-        self.model_options["model_function_wrapper"] = unet_wrapper_function
+    # def set_model_unet_function_wrapper(self, unet_wrapper_function):
+    #     self.model_options["model_function_wrapper"] = unet_wrapper_function
 
     def set_model_patch(self, patch, name):
         to = self.model_options["transformer_options"]
@@ -62,13 +62,13 @@ class ModelPatcher:
             to["patches"] = {}
         to["patches"][name] = to["patches"].get(name, []) + [patch]
 
-    def set_model_patch_replace(self, patch, name, block_name, number):
-        to = self.model_options["transformer_options"]
-        if "patches_replace" not in to:
-            to["patches_replace"] = {}
-        if name not in to["patches_replace"]:
-            to["patches_replace"][name] = {}
-        to["patches_replace"][name][(block_name, number)] = patch
+    # def set_model_patch_replace(self, patch, name, block_name, number):
+    #     to = self.model_options["transformer_options"]
+    #     if "patches_replace" not in to:
+    #         to["patches_replace"] = {}
+    #     if name not in to["patches_replace"]:
+    #         to["patches_replace"][name] = {}
+    #     to["patches_replace"][name][(block_name, number)] = patch
 
     def set_model_attn1_patch(self, patch):
         self.set_model_patch(patch, "attn1_patch")
@@ -76,11 +76,11 @@ class ModelPatcher:
     def set_model_attn2_patch(self, patch):
         self.set_model_patch(patch, "attn2_patch")
 
-    def set_model_attn1_replace(self, patch, block_name, number):
-        self.set_model_patch_replace(patch, "attn1", block_name, number)
+    # def set_model_attn1_replace(self, patch, block_name, number):
+    #     self.set_model_patch_replace(patch, "attn1", block_name, number)
 
-    def set_model_attn2_replace(self, patch, block_name, number):
-        self.set_model_patch_replace(patch, "attn2", block_name, number)
+    # def set_model_attn2_replace(self, patch, block_name, number):
+    #     self.set_model_patch_replace(patch, "attn2", block_name, number)
 
     def set_model_attn1_output_patch(self, patch):
         self.set_model_patch(patch, "attn1_output_patch")
@@ -108,6 +108,7 @@ class ModelPatcher:
                     if hasattr(patch_list[k], "to"):
                         patch_list[k] = patch_list[k].to(device)
         if "unet_wrapper_function" in self.model_options:
+            pdb.set_trace()
             wrap_func = self.model_options["unet_wrapper_function"]
             if hasattr(wrap_func, "to"):
                 self.model_options["unet_wrapper_function"] = wrap_func.to(device)

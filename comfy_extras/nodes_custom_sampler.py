@@ -24,7 +24,7 @@ class BasicScheduler:
         sigmas = comfy.samplers.calculate_sigmas_scheduler(model.model, scheduler, steps).cpu()
         return (sigmas, )
 
-
+# xxxx_root
 class KarrasScheduler:
     @classmethod
     def INPUT_TYPES(s):
@@ -41,6 +41,7 @@ class KarrasScheduler:
     FUNCTION = "get_sigmas"
 
     def get_sigmas(self, steps, sigma_max, sigma_min, rho):
+        pdb.set_trace()
         sigmas = k_diffusion_sampling.get_sigmas_karras(n=steps, sigma_min=sigma_min, sigma_max=sigma_max, rho=rho)
         return (sigmas, )
 
