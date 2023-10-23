@@ -70,6 +70,9 @@ def get_ancestral_step(sigma_from, sigma_to, eta=1.):
 def default_noise_sampler(x):
     return lambda sigma, sigma_next: torch.randn_like(x)
 
+def default_latent_noise_sampler(latent_noise):
+    return lambda sigma, sigma_next: torch.randn_like(latent_noise)
+
 
 class BatchedBrownianTree:
     """A wrapper around torchsde.BrownianTree that enables batches of entropy."""
@@ -134,17 +137,19 @@ class BrownianTreeNoiseSampler:
 
 
 @torch.no_grad()
-def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
+    # latent_noise -- noise_latent_mixer
 
     extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
+    s_in = latent_noise.new_ones([latent_noise.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
-            eps = torch.randn_like(x) * s_noise
-            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+            pdb.set_trace()
+            eps = torch.randn_like(latent_noise) * s_noise
+            latent_noise = latent_noise + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
@@ -157,32 +162,36 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
         #     (inner_model): CFGNoisePredictor(
         #       (inner_model): SDXLRefiner(
         #         (diffusion_model): UNetModel(...)))))
-
-        denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
+        # model.forward.__code__ -- samplers.py", line 339, KSamplerX0Inpaint.forward()
+        # protype: forward(x, sigma, uncond, cond, cond_scale, denoise_mask, cond_concat=None, model_options={}, seed=None)
+        denoised = model(latent_noise, sigma_hat * s_in, **extra_args)
+        d = to_d(latent_noise, sigma_hat, denoised)
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+            callback({'x': latent_noise, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         dt = sigmas[i + 1] - sigma_hat
         # Euler method
-        x = x + d * dt
-    return x
+        latent_noise = latent_noise + d * dt
+    return latent_noise
 
 
 @torch.no_grad()
-def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., 
+def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, eta=1., 
     s_noise=1., noise_sampler=None):
     """Ancestral sampling with Euler method steps."""
 
-    # tensor [x] size: [1, 4, 75, 57], min: -3.324396, max: 3.54762, mean: -0.025742
+    # tensor [latent_noise] size: [1, 4, 75, 57], min: -3.144073, max: 3.543798, mean: -0.0285, noise_latent_mixer
     # tensor [sigmas] size: [11], min: 0.0, max: 0.149319, mean: 0.07029
 
     # -----------------------------------------------------------------------------------------------
     # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
-    # tensor [extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082
+    # tensor [extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082, positive_output_tensor
+
     # extra_args['cond'][0][1] is dict:
     #     tensor [pooled_output] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
     #     tensor [adm_encoded] size: [1, 2560], min: -3.958434, max: 3.203121, mean: 0.187823
-    # tensor [extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
+
+    # tensor [extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526, negative_output_tensor
+    
     # extra_args['uncond'][0][1] is dict:
     #     tensor [pooled_output] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
     #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
@@ -193,8 +202,8 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
 
     # xxxx_refiner 1
     extra_args = {} if extra_args is None else extra_args
-    noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
-    s_in = x.new_ones([x.shape[0]])
+    noise_sampler = default_latent_noise_sampler(latent_noise) if noise_sampler is None else noise_sampler
+    s_in = latent_noise.new_ones([latent_noise.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
@@ -209,19 +218,22 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
         #         (diffusion_model): UNetModel(...)))))
 
         # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        # xxxx_refiner 2
+        # model.forward.__code__ -- samplers.py, line 339, KSamplerX0Inpaint.forward
+        # protype: forward(self, x, sigma, uncond, cond, cond_scale, denoise_mask, cond_concat=None, model_options={}, seed=None)
+        denoised = model(latent_noise, sigmas[i] * s_in, **extra_args)
         # tensor [denoised] size: [1, 4, 75, 57], min: -2.845827, max: 3.328772, mean: -0.026764
 
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        d = to_d(x, sigmas[i], denoised) # (x - denoised) / utils.append_dims(sigma, x.ndim)
+            callback({'x': latent_noise, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        d = to_d(latent_noise, sigmas[i], denoised) # (latent_noise - denoised) / utils.append_dims(sigma, latent_noise.ndim)
         # Euler method
         dt = sigma_down - sigmas[i]
-        x = x + d * dt
+        latent_noise = latent_noise + d * dt
         if sigmas[i + 1] > 0:
-            x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
-    return x
+            latent_noise = latent_noise + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+    return latent_noise
 
 
 @torch.no_grad()

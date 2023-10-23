@@ -217,6 +217,8 @@ class SimpleTokenizer(object):
     def encode(self, text):
         # text -- 'a diagram'
         bpe_tokens = []
+
+        bpe_tokens.append(self.start_token)
         text = whitespace_clean(basic_clean(text)).lower()
         for token in re.findall(self.pat, text): # ==> ['a', 'diagram']
             token = ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
@@ -224,6 +226,7 @@ class SimpleTokenizer(object):
             # self.encoder -- {..., 'diffuser</w>': 49400, ... }
             bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
             # self.encoder['a</w>'] -- 320
+        bpe_tokens.append(self.stop_token)
 
         if len(bpe_tokens) > self.max_length:
             bpe_tokens = bpe_tokens[:self.max_length]
@@ -242,6 +245,31 @@ class SimpleTokenizer(object):
         text = ''.join([self.decoder[token] for token in tokens])
         text = bytearray([self.byte_decoder[c] for c in text]).decode('utf-8', errors="replace").replace('</w>', ' ')
         return text
+
+
+class CLIPTextTokenizer():
+    '''CLIPTextTokenizer'''
+
+    def __init__(self, version="base_1.0"):
+        super(CLIPTextTokenizer, self).__init__()
+        self.version = version
+
+        if version == "base_1.0":
+            self.clip_l = SimpleTokenizer(pad_token=-1)
+            self.clip_g = SimpleTokenizer(pad_token=0)
+        else: # refiner_1.0
+            self.clip_g = SimpleTokenizer(pad_token=0)
+
+    def encode(self, text):
+        tokens = {}
+        if self.version == "base_1.0":
+            tokens['l'] = self.clip_l.encode(text)
+        tokens['g'] = self.clip_g.encode(text)
+
+        return tokens
+
+    def decode(self, tokens):
+        return self.clip_g.decode(tokens['g'])
 
 
 if __name__ == "__main__":

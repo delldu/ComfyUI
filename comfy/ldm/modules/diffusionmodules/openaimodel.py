@@ -16,6 +16,7 @@ from .util import (
 from ..attention import SpatialTransformer
 from comfy.ldm.util import exists
 import comfy.ops
+import todos
 import pdb
 
 class TimestepBlock(nn.Module):
@@ -605,7 +606,9 @@ class UNetModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+        # x -- noise_latent_mixer
         # kwargs -- {}
+        todos.debug.output_var("UNetModel.forward.x", x)
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0

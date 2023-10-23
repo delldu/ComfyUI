@@ -23,9 +23,9 @@ def extract_into_tensor(a, t):
     return out.reshape(b, 1)
 
 
-class EmbedNoiseAugmentation(nn.Module):
+class CLIPEmbedNoiseAugmentation(nn.Module):
     def __init__(self, max_noise_level=1000, timestep_dim=1280):
-        super(EmbedNoiseAugmentation, self).__init__()
+        super(CLIPEmbedNoiseAugmentation, self).__init__()
         self.max_noise_level = max_noise_level
         self.time_embed = Timestep(timestep_dim)
 
@@ -82,6 +82,6 @@ class EmbedNoiseAugmentation(nn.Module):
         return z, noise_level
 
 if __name__ == "__main__":
-    model = EmbedNoiseAugmentation()
+    model = CLIPEmbedNoiseAugmentation()
     model = torch.jit.script(model)
     print(model)

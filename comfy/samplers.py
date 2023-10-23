@@ -26,6 +26,7 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
         # model_function --
         #     <bound method BaseModel.apply_model of SDXLRefiner(
         #     (diffusion_model): UNetModel(...))
+        # x -- noise_latent_mixer !!!
 
         def get_area_and_mult(cond, x_in, cond_concat_in, timestep_in):
             area = (x_in.shape[2], x_in.shape[3], 0, 0)
@@ -301,6 +302,8 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
         if math.isclose(cond_scale, 1.0):
             uncond = None
 
+        # x -- noise_latent_mixer
+        # model_function -- model_base.py, line 53, BaseModel.apply_model
         cond, uncond = calc_cond_uncond_batch(model_function, cond, uncond, x, timestep, max_total_area, cond_concat, model_options)
         if "sampler_cfg_function" in model_options:
             pdb.set_trace()
@@ -325,7 +328,7 @@ class CFGNoisePredictor(torch.nn.Module):
         self.alphas_cumprod = model.alphas_cumprod
 
     def apply_model(self, x, timestep, cond, uncond, cond_scale, cond_concat=None, model_options={}, seed=None):
-        # xxxx_refiner
+        # x -- noise_latent_mixer
         out = sampling_function(self.inner_model.apply_model, x, timestep, uncond, cond, cond_scale, cond_concat, 
             model_options=model_options, seed=seed)
         return out
@@ -337,6 +340,7 @@ class KSamplerX0Inpaint(torch.nn.Module):
         self.inner_model = model
 
     def forward(self, x, sigma, uncond, cond, cond_scale, denoise_mask, cond_concat=None, model_options={}, seed=None):
+        # tensor [x] size: [1, 4, 75, 57], min: -3.052896, max: 3.394737, mean: -0.024983, noise_latent_mixer
         # tensor [self.noise] size: [1, 4, 75, 57], min: -3.425441, max: 4.604774, mean: -0.009182
         # model_options -- {'transformer_options': {}}
         if denoise_mask is not None: # False
@@ -349,6 +353,8 @@ class KSamplerX0Inpaint(torch.nn.Module):
         #  (inner_model): CFGNoisePredictor(
         #    (inner_model): SDXLRefiner(
         #      (diffusion_model): UNetModel(...))))
+        # self.inner_model.forward.__code__ -- k_diffusion/external.py, line 155, DiscreteEpsDDPMDenoiser.forward
+
         out = self.inner_model(x, sigma, cond=cond, uncond=uncond, cond_scale=cond_scale, 
             cond_concat=cond_concat, model_options=model_options, seed=seed)
         if denoise_mask is not None:
@@ -629,18 +635,26 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral"
 
 def ksampler(sampler_name, extra_options={}):
     class KSAMPLER(Sampler):
-        def sample(self, model_wrap, sigmas, extra_args, callback, noise, latent_image=None, denoise_mask=None, disable_pbar=False):
+        def euler_sample(self, model_wrap, sigmas, extra_args, callback, noise, latent_image=None, denoise_mask=None, 
+            disable_pbar=False):
             # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'seed']
+            
+            # todos.debug.output_var("noise", noise)
+            # todos.debug.output_var("latent_image", latent_image)
+            # tensor [noise] size: [1, 4, 75, 57], min: -3.665161, max: 3.792708, mean: -0.014416
+            # tensor [latent_image] size: [1, 4, 75, 57], min: -2.993385, max: 3.271434, mean: -0.026347, vae_encode_output_scale
 
             extra_args["denoise_mask"] = denoise_mask
             model_k = KSamplerX0Inpaint(model_wrap)
             model_k.latent_image = latent_image
             model_k.noise = noise
 
-            if self.max_denoise(model_wrap, sigmas):
+            if self.max_denoise(model_wrap, sigmas): # False
                 noise = noise * torch.sqrt(1.0 + sigmas[0] ** 2.0)
             else:
                 noise = noise * sigmas[0]
+            # sigmas[0] -- tensor(0.149319, device='cuda:0') ==>
+            # tensor [noise] size: [1, 4, 75, 57], min: -0.547279, max: 0.566324, mean: -0.002153
 
             k_callback = None
             total_steps = len(sigmas) - 1
@@ -654,9 +668,15 @@ def ksampler(sampler_name, extra_options={}):
             # sampler_name --- 'euler_ancestral'
             #     # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'seed']
             #     # extra_options -- {}
+            # sample_euler_ancestral
 
+            # xxxx_refiner_0000
             if latent_image is not None:
                 noise += latent_image
+            else:
+                pdb.set_trace()
+            # tensor [noise + latent_image] size: [1, 4, 75, 57], min: -3.144073, max: 3.543798, mean: -0.0285, noise_latent_mixer
+
             if sampler_name == "dpm_fast":
                 samples = k_diffusion_sampling.sample_dpm_fast(model_k, noise, sigma_min, sigmas[0], total_steps, extra_args=extra_args, callback=k_callback, disable=disable_pbar)
             elif sampler_name == "dpm_adaptive":
@@ -686,10 +706,16 @@ def wrap_model(model):
 # xxxx_root
 def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas, model_options={}, 
     latent_image=None, denoise_mask=None, callback=None, disable_pbar=False, seed=None):
+
     # model -- 
     # SDXLRefiner(
     #   (diffusion_model): UNetModel(...))
     # model_options = {'transformer_options': {}}
+
+    # xxxx_refiner
+    # tensor [latent_image] size: [1, 4, 75, 57], min: -22.982035, max: 25.116547, mean: -0.20228, vae_encode_output
+    # todos.debug.output_var("noise", noise)
+    # tensor [noise] size: [1, 4, 75, 57], min: -3.665161, max: 3.792708, mean: -0.014416, latent_noise
 
     positive = positive[:]
     negative = negative[:]
@@ -718,8 +744,10 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")
 
+    # xxxx_refiner_0000
     if latent_image is not None:
         latent_image = model.process_latent_in(latent_image)
+    # tensor [latent_image] size: [1, 4, 75, 57], min: -2.993397, max: 3.271428, mean: -0.026347, vae_encode_output_scale (0.13025)
 
     extra_args = {"cond":positive, "uncond":negative, "cond_scale": cfg, "model_options": model_options, "seed":seed}
 
@@ -741,7 +769,9 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
         extra_args["cond_concat"] = cond_concat
 
     # sampler -- sample_euler_ancestral
-    samples = sampler.sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
+    samples = sampler.euler_sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
+
+    # xxxx_refiner_0000
     return model.process_latent_out(samples.to(torch.float32))
 
 SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"]

@@ -4,7 +4,7 @@ import torch
 import todos
 import pdb
 
-class CLIPEmbeddingNoiseAugmentation(ImageConcatWithNoiseAugmentation):
+class CLIPEmbedNoiseAugmentation(ImageConcatWithNoiseAugmentation):
     def __init__(self, *args, clip_stats_path=None, timestep_dim=256, **kwargs):
         super().__init__(*args, **kwargs)
         if clip_stats_path is None: # True for refiner model

@@ -12,18 +12,28 @@ from SDXL.util import (
     make_beta_schedule,
 )
 from SDXL.noise import (
-    EmbedNoiseAugmentation,
+    CLIPEmbedNoiseAugmentation,
 )
 from SDXL.vae import (
     VAEEncode,
     VAEDecode,
 )
 from SDXL.clip import (
-    SDXLCLIPTextModel,
+    CLIPTextEncode,
+)
+from SDXL.tokenizer import (
+    CLIPTextTokenizer,
 )
 
 import todos
 import pdb
+
+
+def prepare_noise(latent_image, seed):
+    generator = torch.manual_seed(seed)
+    return torch.randn(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, generator=generator, 
+        device=latent_image.device)
+
 
 def append_dims(x, target_dims):
     """Appends dimensions to the end of a tensor until it has target_dims dimensions."""
@@ -38,9 +48,9 @@ def get_ancestral_step(sigma_from, sigma_to):
     sigma_down = (sigma_to ** 2 - sigma_up ** 2) ** 0.5
     return sigma_down, sigma_up
 
-def to_d(x, sigma, denoised):
+def to_d(latent_noise, sigma, denoised):
     """Converts a denoiser output to a Karras ODE derivative."""
-    return (x - denoised) / append_dims(sigma, x.ndim)
+    return (latent_noise - denoised) / append_dims(sigma, latent_noise.ndim)
 
 # KarrasScheduler -- sigma_min, sigma_max ...
 def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
@@ -53,18 +63,21 @@ def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
 
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
-class BaseModel(nn.Module):
-    def __init__(self, version):
-        super(BaseModel, self).__init__()
+class SDXLRefiner(nn.Module):
+    def __init__(self, version="refiner_1.0"):
+        super(SDXLRefiner, self).__init__()
         self.scale_factor = 0.13025
         self.diffusion_model = nn.Identity() # UNetModel(version=version)
         self.vae_encode_model = nn.Identity() # VAEEncode()
         self.vae_decode_model = nn.Identity() # VAEDecode()
-        self.clip_text_model = nn.Identity() # SDXLCLIPTextModel(version=version)
+        self.clip_text_model = CLIPTextEncode(version=version)
 
         # Option models ...
         self.clip_vision_model = nn.Identity()
         self.control_lora_model = nn.Identity()
+
+        self.embedder = Timestep(256)
+        self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -109,6 +122,29 @@ class BaseModel(nn.Module):
 
         return log_sigma.exp()
 
+    def get_scalings(self, sigma):
+        # c_out = -sigma
+        # c_in = 1 / (sigma ** 2 + self.sigma_data ** 2) ** 0.5
+        c_in = 1.0 / ((sigma ** 2 + 1.0) ** 0.5)
+        return c_in
+
+    def get_eps(self, latent_noise, sigma, **kwargs):
+        # tensor [input] size: [1, 4, 75, 57], min: -3.141021, max: 3.365364, mean: -0.027016
+        # tensor [sigma] size: [1], min: 0.149319, max: 0.149319, mean: 0.149319
+        # kwargs.keys() -- ['cond', 'uncond', 'cond_scale', 'cond_concat', 'model_options', 'seed']
+
+        # sigma -- tensor([0.149319], device='cuda:0')
+        # ==> 
+        # self.get_scalings(sigma) -- (tensor([-0.149319], device='cuda:0'), tensor([0.989035], device='cuda:0'))
+        # ==> self.sigma_to_t(sigma) -- 23
+
+        # c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+        c_out = -sigma
+        c_in =  append_dims(self.get_scalings(sigma), latent_noise.ndim)
+        eps = latent_noise # self.get_eps(latent_noise * c_in, self.sigma_to_t(sigma), **kwargs)
+
+        return latent_noise + eps * c_out
+
 
     def set_steps(self, steps, denoise=1.0):
         denoise = min(0.1, denoise)
@@ -121,7 +157,18 @@ class BaseModel(nn.Module):
             sigmas = sigmas[-(steps + 1):]
         return sigmas
 
-    def forward(self, x, t, c_crossattn=None, c_adm=None, control=None):
+
+    def start_sample(self, positive, negative, latent, steps, denoise, cfg=7.5, seed=-1):
+        latent = model.process_latent_in(latent)
+        latent_noise = prepare_noise(latent, seed) # latent, seed ==> latent_noise
+
+        sigmas = self.set_steps(steps, denoise).to(latent.device) # steps, denois ==> sigmas
+        sample = self.sample_euler_ancestral(latent, sigmas)
+
+        return latent # self.process_latent_out(sample)
+
+
+    def forward_x(self, x, t, c_crossattn=None, c_adm=None, control=None):
         x = x.to(self.diffusion_model.dtype)
         t = t.to(self.diffusion_model.dtype)
         context = c_crossattn.to(self.diffusion_model.dtype)
@@ -140,12 +187,12 @@ class BaseModel(nn.Module):
         return latent / self.scale_factor
 
 
-    def euler_ancestral_sample(self, x, sigmas, extra_args=None):
+    def sample_euler_ancestral(self, latent_noise, sigmas, extra_args=None):
         """Ancestral sampling with Euler method steps."""
 
         # xxxx_refiner 1
         extra_args = {}
-        s_in = x.new_ones([x.shape[0]])
+        s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
@@ -154,100 +201,50 @@ class BaseModel(nn.Module):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
             with torch.no_grad():
-                denoised = self.diffusion_model(x) # , sigmas[i] * s_in, **extra_args)
+                denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
+            # denoised = self.get_eps(latent_noise, sigmas[i], ...)
 
             sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
-            d = to_d(x, sigmas[i], denoised) 
+            d = to_d(latent_noise, sigmas[i], denoised) 
 
             # Euler method
             dt = sigma_down - sigmas[i]
-            x = x + d * dt
+            latent_noise = latent_noise + d * dt
             if sigmas[i + 1] > 0:
-                x = x + torch.randn_like(x) * sigma_up
-        return x
+                latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
+        return latent_noise
 
+    def sample_euler(model, latent_noise, sigmas, extra_args=None, s_churn=0.):
+        """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
 
+        extra_args = {} if extra_args is None else extra_args
+        s_in = latent_noise.new_ones([latent_noise.shape[0]])
+        for i in trange(len(sigmas) - 1):
+            gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1)
+            sigma_hat = sigmas[i] * (gamma + 1)
+            if gamma > 0:
+                eps = torch.randn_like(latent_noise)
+                latent_noise = latent_noise + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
 
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # model_forward
+            # model --
+            #
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            with torch.no_grad():
+                denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
 
-def unclip_adm(unclip_condition, device, noise_augmentor, noise_augment_merge=0.0):
-    adm_inputs = []
-    noise_aug = []
-    for unclip_cond in unclip_condition:
-        for adm_cond in unclip_cond["clip_vision_output"].image_embeds:
-            weight = unclip_cond["strength"] # 1.0
-            noise_augment = unclip_cond["noise_augmentation"]
-            noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment) # -- 0
-            c_adm, noise_level_emb = noise_augmentor(adm_cond.to(device), 
-                noise_level=torch.tensor([noise_level], device=device))
-            # noise_level_emb.size() -- [1, 1280]
+            d = to_d(latent_noise, sigma_hat, denoised)
+            dt = sigmas[i + 1] - sigma_hat
+            # Euler method
+            latent_noise = latent_noise + d * dt
+        return latent_noise
 
-            adm_out = torch.cat((c_adm, noise_level_emb), 1) * weight
-            noise_aug.append(noise_augment)
-            adm_inputs.append(adm_out)
-
-    if len(noise_aug) > 1: # False
-        pdb.set_trace()
-        adm_out = torch.stack(adm_inputs).sum(0)
-        noise_augment = noise_augment_merge
-        noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
-        c_adm, noise_level_emb = noise_augmentor(adm_out[:, :noise_augmentor.time_embed.dim], noise_level=torch.tensor([noise_level], device=device))
-        adm_out = torch.cat((c_adm, noise_level_emb), 1)
-
-    # adm_out.size() -- [1, 2560]
-
-    return adm_out
-
-
-def sdxl_pooled(args, noise_augmentor):
-    # noise_augmentor -- EmbedNoiseAugmentation((time_embed): Timestep())
-
-    if "unclip_condition" in args: # False
-        # ClipVision
-        return unclip_adm(args.get("unclip_condition", None), args["device"], noise_augmentor)[:,:1280]
-    else:
-        return args["pooled_output"]
-
-
-class SDXL(BaseModel):
-    def __init__(self):
-        super(SDXL, self).__init__(version="base_1.0")
-        self.embedder = Timestep(256)
-        self.noise_augmentor = EmbedNoiseAugmentation()
-
-    def encode_adm(self, **kwargs):
-        # kwargs -- 
-        # {'device': device(type='cuda', index=0), 'pooled_output': tensor([[ 0.5246, -0.2884, -0.2883,  ..., -0.6900,  1.4370, -1.0179]]), 'control': <comfy.controlnet.ControlLora object at 0x7fee48d770a0>, 
-        #     'width': 1256, 'height': 832, 'prompt_type': 'positive'}
-
-        clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
-        width = kwargs.get("width", 768)
-        height = kwargs.get("height", 768)
-        crop_w = kwargs.get("crop_w", 0)
-        crop_h = kwargs.get("crop_h", 0)
-        target_width = kwargs.get("target_width", width)
-        target_height = kwargs.get("target_height", height)
-
-        out = []
-        out.append(self.embedder(torch.Tensor([height])))
-        out.append(self.embedder(torch.Tensor([width])))
-        out.append(self.embedder(torch.Tensor([crop_h])))
-        out.append(self.embedder(torch.Tensor([crop_w])))
-        out.append(self.embedder(torch.Tensor([target_height])))
-        out.append(self.embedder(torch.Tensor([target_width])))
-        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(clip_pooled.shape[0], 1)
-        return torch.cat((clip_pooled.to(flat.device), flat), dim=1)
-
-
-class SDXLRefiner(BaseModel):
-    def __init__(self):
-        super(SDXLRefiner, self).__init__(version="refiner_1.0")
-        self.embedder = Timestep(256)
-        self.noise_augmentor = EmbedNoiseAugmentation()
 
     def encode_adm(self, **kwargs):
         # kwargs.keys() -- ['device', 'pooled_output', 'unclip_condition', 'width', 'height', 'prompt_type']
         
-        clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
+        clip_pooled = kwargs["pooled_output"]
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
         crop_w = kwargs.get("crop_w", 0)
@@ -267,35 +264,6 @@ class SDXLRefiner(BaseModel):
         flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(clip_pooled.shape[0], 1)
         return torch.cat((clip_pooled.to(flat.device), flat), dim=1)
 
-def test_sdxl():
-    model = SDXL()
-    model = model.eval()
-    # model = torch.jit.script(model)
-    model.cuda()
-
-    x = torch.randn(1, 4, 146, 111).cuda()
-    t = torch.randn(1).cuda()
-    c_crossattn = torch.randn(1, 77, 2048).cuda()
-    c_adm = torch.randn(1, 2816).cuda()
-
-
-    control = {
-        "input":[],
-        "middle": [torch.randn(1, 1280, 37, 28).cuda()],
-        "output": [
-            torch.randn(1, 320, 146, 111).cuda(), torch.randn(1, 320, 146, 111).cuda(), torch.randn(1, 320, 146, 111).cuda(),
-            torch.randn(1, 320, 73, 56).cuda(), torch.randn(1, 640, 73, 56).cuda(), torch.randn(1, 640, 73, 56).cuda(),
-            torch.randn(1, 640, 37, 28).cuda(), torch.randn(1, 1280, 37, 28).cuda(), torch.randn(1, 1280, 37, 28).cuda(),
-        ],
-    }
-
-    with torch.no_grad():
-        output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
-
-    print(output.size()) # [1, 4, 146, 111]
-    # print(model)
-
-
 
 def test_refiner():
     model = SDXLRefiner()
@@ -303,22 +271,63 @@ def test_refiner():
     # model = torch.jit.script(model)
     model.cuda()
 
-    x = torch.randn(1, 4, 146, 111).cuda()
-    t = torch.randn(1).cuda()
-    c_crossattn = torch.randn(1, 77, 1280).cuda()
-    c_adm = torch.randn(1, 2560).cuda()
-    control = None
+    positive_prompt = "bag, clean background, made from cloth"
+    negative_prompt = "watermark, text"
 
-    sigmas = model.set_steps(10, denoise=0.2).to(x.device)
-    output = model.euler_ancestral_sample(x, sigmas)
-    # with torch.no_grad():
-    #     output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
+    clip_token = CLIPTextTokenizer(version="refiner_1.0")
+    positive_tokens = clip_token.encode(positive_prompt)
 
-    print(output.size()) # [1, 4, 146, 111]
-    print(model)
+    print(positive_tokens)
+
+    {'g': [49406, 3365, 267, 3772, 5994, 267, 1105, 633, 14559, 49407, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+
+
+    # (Pdb) tokens['l']
+    # [[(49406, 1.0), (3365, 1.0), (267, 1.0), (3772, 1.0), (5994, 1.0), (267, 1.0), (1105, 1.0), (633, 1.0), (14559, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0)]]
+    # (Pdb) tokens['g']
+    # [[(49406, 1.0), (3365, 1.0), (267, 1.0), (3772, 1.0), (5994, 1.0), (267, 1.0), (1105, 1.0), (633, 1.0), (14559, 1.0), 
+    # (49407, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0)]]
+
+
+    negative_tokens = clip_token.encode(negative_prompt)
+    print(negative_tokens)
+
+    # (Pdb) tokens['l']
+    # [[(49406, 1.0), (2505, 1.0), (2110, 1.0), (267, 1.0), (4160, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0), (49407, 1.0)]]
+    # (Pdb) tokens['g']
+    # [[(49406, 1.0), (2505, 1.0), (2110, 1.0), (267, 1.0), (4160, 1.0), (49407, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0)]]
+
+    positive_tensor, positive_pooled = model.clip_text_model(torch.LongTensor(positive_tokens['g']).cuda())
+    todos.debug.output_var("positive_tensor", positive_tensor)
+    todos.debug.output_var("positive_pooled", positive_pooled)
+    # tensor [positive_tensor] size: [1, 77, 1280], min: -28.947594, max: 31.752134, mean: 0.09212
+    # tensor [positive_pooled] size: [1, 1280], min: -3.62947, max: 3.656186, mean: 0.001459
+
+    negative_tensor, negative_pooled = model.clip_text_model(torch.LongTensor(negative_tokens['g']).cuda())
+    todos.debug.output_var("negative_tensor", negative_tensor)
+    todos.debug.output_var("negative_pooled", negative_pooled)
+    # tensor [negative_tensor] size: [1, 77, 1280], min: -28.947594, max: 29.09692, mean: 0.090274
+    # tensor [negative_pooled] size: [1, 1280], min: -3.919105, max: 3.43405, mean: 0.020215
+
+    pdb.set_trace()
+
+
+
+
+    # x = torch.randn(1, 4, 146, 111).cuda()
+    # t = torch.randn(1).cuda()
+    # c_crossattn = torch.randn(1, 77, 1280).cuda()
+    # c_adm = torch.randn(1, 2560).cuda()
+    # control = None
+
+    # sigmas = model.set_steps(10, denoise=0.2).to(x.device)
+    # output = model.sample_euler_ancestral(x, sigmas)
+    # # with torch.no_grad():
+    # #     output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
+
+    # print(output.size()) # [1, 4, 146, 111]
+    # print(model)
 
 
 if __name__ == "__main__":
-    # test_sdxl()
-
     test_refiner()

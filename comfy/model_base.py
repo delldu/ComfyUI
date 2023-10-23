@@ -1,6 +1,6 @@
 import torch
 from comfy.ldm.modules.diffusionmodules.openaimodel import UNetModel
-from comfy.ldm.modules.encoders.noise_aug_modules import CLIPEmbeddingNoiseAugmentation
+from comfy.ldm.modules.encoders.noise_aug_modules import CLIPEmbedNoiseAugmentation
 from comfy.ldm.modules.diffusionmodules.util import make_beta_schedule
 from comfy.ldm.modules.diffusionmodules.openaimodel import Timestep
 import comfy.model_management
@@ -51,6 +51,7 @@ class BaseModel(torch.nn.Module):
         self.register_buffer('alphas_cumprod_prev', torch.tensor(alphas_cumprod_prev, dtype=torch.float32))
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, c_adm=None, control=None, transformer_options={}):
+        # x -- noise_latent_mixer
         todos.debug.output_var("x", x)
         todos.debug.output_var("t", t)
         todos.debug.output_var("c_concat", c_concat)
@@ -60,10 +61,11 @@ class BaseModel(torch.nn.Module):
         todos.debug.output_var("transformer_options", transformer_options)
 
         # for refine model
-        # tensor [x] size: [2, 4, 75, 57], min: -4.223927, max: 4.486642, mean: -0.0045
+        # tensor [x] size: [2, 4, 75, 57], min: -3.019421, max: 3.357514, mean: -0.024709 ????
+        # 
         # tensor [t] size: [2], min: 797.0, max: 797.0
         # [c_concat] value: None
-        # tensor [c_crossattn] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.032304
+        # tensor [c_crossattn] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.032304, positive_tensor ???
         # tensor [c_adm] size: [2, 2560], min: -3.958434, max: 3.409507, mean: 0.195633
         # [control] value: None
         # transformer_options is dict:
@@ -178,7 +180,7 @@ def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge
 class SD21UNCLIP(BaseModel):
     def __init__(self, model_config, noise_aug_config, model_type=ModelType.V_PREDICTION, device=None):
         super().__init__(model_config, model_type, device=device)
-        self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**noise_aug_config)
+        self.noise_augmentor = CLIPEmbedNoiseAugmentation(**noise_aug_config)
 
     def encode_adm(self, **kwargs):
         unclip_conditioning = kwargs.get("unclip_conditioning", None)
@@ -199,7 +201,7 @@ class SDXLRefiner(BaseModel):
     def __init__(self, model_config, model_type=ModelType.EPS, device=None):
         super().__init__(model_config, model_type, device=device)
         self.embedder = Timestep(256)
-        # self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
+        # self.noise_augmentor = CLIPEmbedNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
         # for refine model
@@ -231,7 +233,7 @@ class SDXL(BaseModel):
     def __init__(self, model_config, model_type=ModelType.EPS, device=None):
         super().__init__(model_config, model_type, device=device)
         self.embedder = Timestep(256)
-        self.noise_augmentor = CLIPEmbeddingNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
+        self.noise_augmentor = CLIPEmbedNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
         # kwargs -- 

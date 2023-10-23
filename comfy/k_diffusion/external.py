@@ -62,8 +62,6 @@ class DiscreteSchedule(nn.Module):
         return self.sigmas[-1]
 
     # def get_sigmas(self, n=None):
-    #     pdb.set_trace()
-
     #     if n is None:
     #         return sampling.append_zero(self.sigmas.flip(0))
     #     t_max = len(self.sigmas) - 1
@@ -155,7 +153,8 @@ class DiscreteEpsDDPMDenoiser(DiscreteSchedule):
 
     # xxxx_refiner 2 ...
     def forward(self, input, sigma, **kwargs):
-        # tensor [input] size: [1, 4, 75, 57], min: -3.141021, max: 3.365364, mean: -0.027016
+        # tensor [input] size: [1, 4, 75, 57], min: -3.141021, max: 3.365364, mean: -0.027016, noise_latent_mixer
+
         # tensor [sigma] size: [1], min: 0.149319, max: 0.149319, mean: 0.149319
         # kwargs.keys() -- ['cond', 'uncond', 'cond_scale', 'cond_concat', 'model_options', 'seed']
 
@@ -192,7 +191,7 @@ class CompVisDenoiser(DiscreteEpsDDPMDenoiser):
 
     def get_eps(self, *args, **kwargs):
         # args is tuple: len = 2
-        #     tensor [item] size: [1, 4, 75, 57], min: -3.884738, max: 3.884999, mean: 0.003339
+        #     tensor [item] size: [1, 4, 75, 57], min: -3.884738, max: 3.884999, mean: 0.003339, noise_latent_mixer
         #     tensor [item] size: [1], min: 786.0, max: 786.0
 
         # kwargs is dict:
@@ -237,6 +236,7 @@ class CompVisDenoiser(DiscreteEpsDDPMDenoiser):
         # <bound method CFGNoisePredictor.apply_model of CFGNoisePredictor(
         #   (inner_model): SDXLRefiner(
         #     (diffusion_model): UNetModel(...)))
+        # self.inner_model.apply_model -- CFGNoisePredictor.apply_model
 
         return self.inner_model.apply_model(*args, **kwargs)
 
