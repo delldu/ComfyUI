@@ -14,29 +14,6 @@ from typing import Tuple, Dict
 import todos
 import pdb
 
-
-# class QuickGELUActivation(nn.Module):
-#     """
-#     Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
-#     """
-#     def forward(self, input):
-#         return input * torch.sigmoid(1.702 * input)
-
-# class GELUActivation(nn.Module):
-#     def __init__(self, use_gelu_python: bool = False):
-#         super().__init__()
-#         if use_gelu_python:
-#             self.act = self._gelu_python
-#         else:
-#             self.act = nn.functional.gelu
-
-#     def _gelu_python(self, input):
-#         return input * 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
-
-#     def forward(self, input):
-#         return self.act(input)
-
-
 class CLIPTextEmbeddings(nn.Module):
     def __init__(self, config):
         super(CLIPTextEmbeddings, self).__init__()
@@ -110,7 +87,7 @@ class CLIPAttention(nn.Module):
 class CLIPMLP(nn.Module):
     def __init__(self, config):
         super(CLIPMLP, self).__init__()
-        self.activation_fn = nn.GELU() #  GELUActivation() # QuickGELUActivation()
+        self.activation_fn = nn.GELU() #  QuickGELUActivation()
 
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)

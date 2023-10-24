@@ -317,8 +317,6 @@ def test_refiner():
     # tensor [cond] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526, negative_output_tensor
     # tensor [pooled] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
 
-    pdb.set_trace()
-
 
 
     # x = torch.randn(1, 4, 146, 111).cuda()
