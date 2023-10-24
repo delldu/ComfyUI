@@ -10,15 +10,31 @@ from SDXL.util import (
     load_refiner_clip_model_weight,
 )
 from typing import Tuple, Dict
+
+import todos
 import pdb
 
 
-class QuickGELUActivation(nn.Module):
-    """
-    Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
-    """
-    def forward(self, input):
-        return input * torch.sigmoid(1.702 * input)
+# class QuickGELUActivation(nn.Module):
+#     """
+#     Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
+#     """
+#     def forward(self, input):
+#         return input * torch.sigmoid(1.702 * input)
+
+# class GELUActivation(nn.Module):
+#     def __init__(self, use_gelu_python: bool = False):
+#         super().__init__()
+#         if use_gelu_python:
+#             self.act = self._gelu_python
+#         else:
+#             self.act = nn.functional.gelu
+
+#     def _gelu_python(self, input):
+#         return input * 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
+
+#     def forward(self, input):
+#         return self.act(input)
 
 
 class CLIPTextEmbeddings(nn.Module):
@@ -37,8 +53,6 @@ class CLIPTextEmbeddings(nn.Module):
         #          72, 73, 74, 75, 76]], device='cuda:0')
 
     def forward(self, input_tokens):
-        # seq_length = input_tokens.shape[-1]
-        # position_ids = self.position_ids[:, :seq_length]
         inputs_embeds = self.token_embedding(input_tokens)
         position_embeddings = self.position_embedding(self.position_ids)
         embeddings = inputs_embeds + position_embeddings
@@ -48,7 +62,6 @@ class CLIPTextEmbeddings(nn.Module):
 class CLIPAttention(nn.Module):
     def __init__(self, config):
         super(CLIPAttention, self).__init__()
-        # self.config = config
         self.embed_dim = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = self.embed_dim // self.num_heads
@@ -97,8 +110,7 @@ class CLIPAttention(nn.Module):
 class CLIPMLP(nn.Module):
     def __init__(self, config):
         super(CLIPMLP, self).__init__()
-        # self.config = config
-        self.activation_fn = QuickGELUActivation()
+        self.activation_fn = nn.GELU() #  GELUActivation() # QuickGELUActivation()
 
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
@@ -140,7 +152,6 @@ class CLIPEncoderLayer(nn.Module):
 class CLIPEncoder(nn.Module):
     def __init__(self, config):
         super(CLIPEncoder, self).__init__()
-        # self.config = config
         self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(self, inputs_embeds, causal_attention_mask):
@@ -153,7 +164,6 @@ class CLIPEncoder(nn.Module):
 
         encoder_states = encoder_states + (hidden_states,)
 
-        # return hidden_states # size() -- [1, 77, 768], last_hidden_state
         return {
             "last_hidden_state" : hidden_states, 
             "hidden_states" : encoder_states,
@@ -165,17 +175,19 @@ def make_causal_mask(x):
     Make causal mask used for bi-directional self-attention.
     """
     B, L = x.size() # torch.Size([1, 77])
-    mask = torch.full((L, L), -1000000000.0, device=x.device)
+    # mask = torch.full((L, L), -1000000000.0, device=x.device)
+    mask = torch.full((L, L), torch.tensor(torch.finfo(torch.torch.float32).min), device=x.device)
+
     mask_cond = torch.arange(mask.size(-1), device=x.device)
     mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
     mask = mask.to(x.dtype) # mask.size() -- [77, 77]
 
     return mask[None, None, :, :].expand(B, 1, L, L) # size() -- [1, 1, 77, 77]
 
+
 class CLIPTextTransformer(nn.Module):
     def __init__(self, config):
         super(CLIPTextTransformer, self).__init__()
-        # self.config = config
         self.embeddings = CLIPTextEmbeddings(config)
         self.encoder = CLIPEncoder(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -184,23 +196,12 @@ class CLIPTextTransformer(nn.Module):
         input_shape = input_tokens.size() # [1, 77]
         input_tokens = input_tokens.view(-1, input_shape[-1])
 
-        hidden_states = self.embeddings(input_tokens)
+        hidden_states = self.embeddings(input_tokens) # OK
 
         # CLIP's text model uses causal mask, prepare it here.
         # https://github.com/openai/CLIP/blob/cfcffb90e69f37bf2ff1e988237a0fbe41f33c04/clip/model.py#L324
         causal_attention_mask = make_causal_mask(input_tokens)
 
-        # last_hidden_state = self.encoder(inputs_embeds=hidden_states, causal_attention_mask=causal_attention_mask)
-        # last_hidden_state = self.final_layer_norm(last_hidden_state)
-
-        # pooled_output = last_hidden_state[
-        #     torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device),
-        #     input_tokens.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1),
-        # ]
-
-        # return last_hidden_state, pooled_output # size() -- [1, 77, 768]
-
-        # # -----------------------------------
         encoder_outputs = self.encoder(
             inputs_embeds=hidden_states,
             causal_attention_mask=causal_attention_mask,
@@ -209,13 +210,10 @@ class CLIPTextTransformer(nn.Module):
         last_hidden_state = encoder_outputs["last_hidden_state"]
         last_hidden_state = self.final_layer_norm(last_hidden_state)
 
-        # text_embeds.shape = [batch_size, sequence_length, transformer.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
-        # casting to torch.int for onnx compatibility: argmax doesn't support int64 inputs with opset 14
         pooled_output = last_hidden_state[
             torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device),
             input_tokens.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1),
-        ] # size() -- [1, 768]
+        ]
 
         return {
             "hidden_states": encoder_outputs["hidden_states"],
@@ -229,21 +227,10 @@ class CLIPTextModel(nn.Module):
         self.text_model = CLIPTextTransformer(config)
 
     def get_input_embeddings(self) -> nn.Module:
-        return self.text_model.embeddings.token_embedding # Embedding(49408, 768)
+        return self.text_model.embeddings.token_embedding # Embedding(49408, 1280)
 
     def forward(self, input_tokens):
-        # z, pooled_output = self.text_model(input_tokens=input_tokens)
-        # return z, pooled_output # size() -- ([1, 77]
-
-        return self.text_model(
-            input_tokens, # size() -- ([1, 77]
-        )
-
-        # z = outputs.hidden_states[self.layer_idx]
-        # if self.layer_norm_hidden_state: # True
-        #     z = self.transformer.text_model.final_layer_norm(z)
-        # pooled = outputs.pooler_output.float().to(self.text_projection.device) @ self.text_projection.float()
-
+        return self.text_model(input_tokens)
 
 
 class CLIPVisionEmbeddings(nn.Module):
@@ -373,6 +360,7 @@ class SDXLClipL(nn.Module):
               "vocab_size": 49408
             }
         )
+
         self.layer_idx = 11
         self.transformer = CLIPTextModel(config)
         self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
@@ -381,10 +369,10 @@ class SDXLClipL(nn.Module):
 
     def forward(self, tokens):
         outputs = self.transformer(tokens)
-        z = outputs.hidden_states[self.layer_idx]
+        z = outputs["hidden_states"][self.layer_idx]
         if self.layer_norm_hidden_state: # True
             z = self.transformer.text_model.final_layer_norm(z)
-        pooled = outputs.pooler_output.float().to(self.text_projection.device) @ self.text_projection.float()
+        pooled = outputs["pooler_output"].float().to(self.text_projection.device) @ self.text_projection.float()
 
         return z.float(), pooled.float()
 
@@ -425,6 +413,14 @@ class SDXLClipG(nn.Module):
         self.layer_norm_hidden_state = False
 
     def forward(self, tokens):
+        # tensor([49406,  3365,   267,  3772,  5994,   267,  1105,   633, 14559, 49407,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+        #             0,     0,     0,     0,     0,     0,     0], device='cuda:0')
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
         if self.layer_norm_hidden_state: # False
@@ -452,19 +448,19 @@ class CLIPTextEncode(nn.Module):
         else:
             load_refiner_clip_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
-    def forward(self, tokens):
+    def forward(self, tokens, device=torch.device('cuda')):
         if self.version == "base_1.0":
-            token_l = tokens['l'] # padding with eos
+            token_l = tokens['l']  # padding with stop_token
             token_g = tokens['g']  # padding with 0
 
-            l_out, l_pooled = self.clip_l(token_l)
-            g_out, g_pooled = self.clip_g(token_g)
+            l_out, l_pooled = self.clip_l(torch.LongTensor(token_l).to(device))
+            g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
             return torch.cat([l_out, g_out], dim=-1), g_pooled
 
         # refiner_1.0 version
-        token_g = tokens # ["g"]
-        g_out, g_pooled = self.clip_g(token_g)
+        token_g = tokens['g']
+        g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
         return g_out, g_pooled
 
 
@@ -520,5 +516,4 @@ if __name__ == "__main__":
     # model = torch.jit.script(model)
     # print(model)
     todos.debug.output_weight(model.state_dict())
-
 

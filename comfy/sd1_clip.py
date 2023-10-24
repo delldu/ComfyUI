@@ -12,14 +12,25 @@ import pdb
 
 class ClipTokenWeightEncoder:
     def encode_token_weights(self, token_weight_pairs):
+        # token_weight_pairs -- 
+        # [[(49406, 1.0), (3365, 1.0), (267, 1.0), (3772, 1.0), (5994, 1.0), (267, 1.0), (1105, 1.0), 
+        #     (633, 1.0), (14559, 1.0), (49407, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0), (0, 1.0)]]
+
         to_encode = list(self.empty_tokens)
         for x in token_weight_pairs:
             tokens = list(map(lambda a: a[0], x))
             to_encode.append(tokens)
 
+        # (Pdb) to_encode[0] --
+        # [49406, 49407, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        # (Pdb) to_encode[1]
+        # [49406, 3365, 267, 3772, 5994, 267, 1105, 633, 14559, 49407, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
         out, pooled = self.encode(to_encode)
+        # out.size() -- [2, 77, 1280]
+        # pooled.size() -- [2, 1280]
         z_empty = out[0:1]
-        if pooled.shape[0] > 1:
+        if pooled.shape[0] > 1: # True
             first_pooled = pooled[1:2]
         else:
             first_pooled = pooled[0:1]
@@ -139,6 +150,9 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
         return processed_tokens
 
     def forward(self, tokens):
+        # tokens -- why ???
+        # tensor([[49406, 49407,     0,  ...,     0,     0,     0],
+        #         [49406,  3365,   267,  ...,     0,     0,     0]], device='cuda:0')
         backup_embeds = self.transformer.get_input_embeddings()
         device = backup_embeds.weight.device
         tokens = self.set_up_textual_embeddings(tokens, backup_embeds)
@@ -168,8 +182,9 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
             elif self.layer == "pooled":
                 z = outputs.pooler_output[:, None, :]
             else:
-                z = outputs.hidden_states[self.layer_idx]
-                if self.layer_norm_hidden_state: # True
+                z = outputs.hidden_states[self.layer_idx] # self.layer_idx == -2
+                # tensor [z] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.030258
+                if self.layer_norm_hidden_state: # False
                     z = self.transformer.text_model.final_layer_norm(z)
 
             pooled_output = outputs.pooler_output

@@ -89,10 +89,13 @@ class CLIP:
         else:
             params['dtype'] = torch.float32
 
+        # params -- {'device': device(type='cpu'), 'dtype': torch.float16}
         self.cond_stage_model = clip(**(params))
         # self.cond_stage_model -- SDXLClipModel(...) -- clip_l, clip_g
+        # refiner 1.0 -- self.cond_stage_model -- clip_g
 
         self.tokenizer = tokenizer(embedding_directory=embedding_directory)
+        # type(self.tokenizer) -- <class 'comfy.sdxl_clip.SDXLTokenizer'>
         self.patcher = comfy.model_patcher.ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device)
         self.layer_idx = None
 
@@ -114,7 +117,7 @@ class CLIP:
         return self.tokenizer.tokenize_with_weights(text, return_word_ids)
 
     def encode_from_tokens(self, tokens, return_pooled=False):
-        todos.debug.output_var("tokens", tokens)
+        # todos.debug.output_var("tokens", tokens)
 
         if self.layer_idx is not None:
             self.cond_stage_model.clip_layer(self.layer_idx)
@@ -123,6 +126,7 @@ class CLIP:
 
         self.load_model()
         cond, pooled = self.cond_stage_model.encode_token_weights(tokens)
+
         if return_pooled:
             return cond, pooled
         return cond

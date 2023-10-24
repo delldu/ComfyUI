@@ -242,7 +242,7 @@ class SimpleTokenizer(object):
         return bpe_tokens
 
     def decode(self, tokens):
-        text = ''.join([self.decoder[token] for token in tokens])
+        text = ''.join([self.decoder[token] for token in tokens]) # remove weight 1.0
         text = bytearray([self.byte_decoder[c] for c in text]).decode('utf-8', errors="replace").replace('</w>', ' ')
         return text
 
@@ -259,6 +259,7 @@ class CLIPTextTokenizer():
             self.clip_g = SimpleTokenizer(pad_token=0)
         else: # refiner_1.0
             self.clip_g = SimpleTokenizer(pad_token=0)
+
 
     def encode(self, text):
         tokens = {}
