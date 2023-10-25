@@ -68,7 +68,7 @@ class AutoencoderKL(nn.Module):
         meanvar, logvar = torch.chunk(moments, 2, dim=1)
         logvar = torch.clamp(logvar, -30.0, 20.0)
         stdvar = torch.exp(0.5 * logvar)
-        output = meanvar + stdvar * torch.randn(moments.shape).to(device=x.device)
+        output = meanvar + stdvar * torch.randn(meanvar.shape).to(device=x.device)
 
         return output
 
@@ -78,7 +78,7 @@ class AutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-# vae_encode_model
+# create_vae_encode_model
 class VAEEncode(nn.Module):
     def __init__(self, embed_dim=4):
         super(VAEEncode, self).__init__()
@@ -106,11 +106,11 @@ class VAEEncode(nn.Module):
         meanvar, logvar = torch.chunk(moments, 2, dim=1)
         logvar = torch.clamp(logvar, -30.0, 20.0)
         stdvar = torch.exp(0.5 * logvar)
-        output = meanvar + stdvar * torch.randn(moments.shape).to(device=x.device)
+        output = meanvar + stdvar * torch.randn(meanvar.shape).to(device=x.device)
 
         return output
 
-# vae_decode_model
+# create_vae_decode_model
 class VAEDecode(nn.Module):
     def __init__(self, embed_dim=4):
         super(VAEDecode, self).__init__()
@@ -416,30 +416,32 @@ def vae_model():
     return model
 
 
-def vae_encode_model():
+def create_vae_encode_model():
     # output: SdxlVaeEncode
 
     model = VAEEncode()
-    model = model.half()
+    # model = model.half()
     model = model.eval()
+    # model = model.cuda()
 
     return model
 
 
-def vae_decode_model():
+def create_vae_decode_model():
     # output: SdxlVaeDecode
 
     model = VAEDecode()
-    model = model.half()
+    # model = model.half()
     model = model.eval()
+    # model = model.cuda()
 
     return model
 
 
 if __name__ == "__main__":
     model = vae_model()
-    # model = vae_encode_model()
-    # model = vae_decode_model()
+    # model = create_vae_encode_model()
+    # model = create_vae_decode_model()
 
     # model = torch.jit.script(model)
     print(model)

@@ -9,6 +9,10 @@ from SDXL.util import (
     load_base_clip_model_weight,
     load_refiner_clip_model_weight,
 )
+from SDXL.tokenizer import (
+    CLIPTextTokenizer,
+)
+
 from typing import Tuple, Dict
 
 import todos
@@ -327,7 +331,7 @@ class SDXLClipL(nn.Module):
               "intermediate_size": 3072,
               "layer_norm_eps": 1e-05,
               "max_position_embeddings": 77,
-              "model_type": "clip_text_model",
+              "model_type": "create_clip_text_model",
               "num_attention_heads": 12,
               "num_hidden_layers": 12,
               "pad_token_id": 1,
@@ -374,7 +378,7 @@ class SDXLClipG(nn.Module):
               "intermediate_size": 5120,
               "layer_norm_eps": 1e-05,
               "max_position_embeddings": 77,
-              "model_type": "clip_text_model",
+              "model_type": "create_clip_text_model",
               "num_attention_heads": 20,
               "num_hidden_layers": 32,
               "pad_token_id": 1,
@@ -425,7 +429,7 @@ class CLIPTextEncode(nn.Module):
         else:
             load_refiner_clip_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
-    def forward(self, tokens, device=torch.device('cuda')):
+    def forward(self, tokens, device=torch.device('cpu')):
         if self.version == "base_1.0":
             token_l = tokens['l']  # padding with stop_token
             token_g = tokens['g']  # padding with 0
@@ -438,7 +442,11 @@ class CLIPTextEncode(nn.Module):
         # refiner_1.0 version
         token_g = tokens['g']
         g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
-        return g_out, g_pooled
+
+        return {
+            "text_encoded" : g_out, 
+            "pooled_output" : g_pooled
+        }
 
 
 def clip_vision_model():
@@ -472,28 +480,29 @@ def clip_vision_model():
     model = model.eval()
     return model   
 
-def clip_text_model(version="base_1.0"):
+def create_clip_text_model(version="base_1.0"):
     # output: SdxlClipText
     # output: RefinerClipText
 
     model = CLIPTextEncode(version=version)
-    model = model.half()
+    # model = model.half()
     model = model.eval()
+    # model = model.cuda()
     return model  
+
+def create_clip_token_model(version="base_1.0"):
+    return CLIPTextTokenizer(version=version)
 
 
 if __name__ == "__main__":
     import todos
-    from SDXL.tokenizer import (
-        CLIPTextTokenizer,
-    )
 
     # model_version = "base_1.0"
     model_version = "refiner_1.0"
     print(f"model version {model_version}")
 
-    model = clip_text_model(version=model_version)
-    model = model.cuda()
+    model = create_clip_text_model(version=model_version)
+    # model = model.cuda()
 
     # model = torch.jit.script(model)
     # print(model)
@@ -507,9 +516,8 @@ if __name__ == "__main__":
     print(positive_tokens)
 
     with torch.no_grad():
-        positive_tensor, positive_pooled = model(positive_tokens)
+        positive_tensor = model(positive_tokens)
     todos.debug.output_var("positive_tensor", positive_tensor)
-    todos.debug.output_var("positive_pooled", positive_pooled)
     print(
         '''
         # Standard
@@ -522,9 +530,8 @@ if __name__ == "__main__":
     negative_tokens = clip_token.encode(negative_prompt)
     print(negative_tokens)
     with torch.no_grad():
-        negative_tensor, negative_pooled = model(negative_tokens)
+        negative_tensor = model(negative_tokens)
     todos.debug.output_var("negative_tensor", negative_tensor)
-    todos.debug.output_var("negative_pooled", negative_pooled)
 
     print(
         '''

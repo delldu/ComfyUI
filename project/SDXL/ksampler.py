@@ -1,25 +1,10 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-from tqdm import tqdm, trange
-import time
+from tqdm import trange
 
 from SDXL.util import (
     make_beta_schedule,
-)
-from SDXL.noise import (
-    CLIPEmbedNoiseAugmentation,
-)
-from SDXL.vae import (
-    VAEEncode,
-    VAEDecode,
-)
-from SDXL.clip import (
-    CLIPTextEncode,
-)
-from SDXL.tokenizer import (
-    CLIPTextTokenizer,
 )
 
 import todos
@@ -45,6 +30,8 @@ from SDXL.unet import (
 #         # [control] value: None
 #         # output ----
 #         # tensor [output] size: [2, 4, 75, 57], min: -3.130859, max: 3.892578, mean: -0.005257        
+#         import time
+
 #         time.sleep(1.0)
 #         return x
 
@@ -95,7 +82,6 @@ class KSampler(nn.Module):
         self.scale_factor = 0.13025
         self.diffusion_model = UNetModel(version=version)
         self.embedder = Timestep(256)
-        # self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -160,9 +146,7 @@ class KSampler(nn.Module):
 
         positive_predict = latent_noise + eps1 * c_out
         negative_predict = latent_noise + eps2 * c_out
-
-        return positive_predict * cond_scale + positive_predict * (1.0 - cond_scale)
-
+        return positive_predict * cond_scale + negative_predict * (1.0 - cond_scale)
 
 
     def set_steps(self, steps, denoise=1.0):
@@ -203,7 +187,6 @@ class KSampler(nn.Module):
         return latent_output
 
 
-
     def forward_x(self, x, t, c_crossattn=None, c_adm=None, control=None):
         x = x.to(self.diffusion_model.dtype)
         t = t.to(self.diffusion_model.dtype)
@@ -222,13 +205,9 @@ class KSampler(nn.Module):
     def process_latent_out(self, latent):
         return latent / self.scale_factor
 
-
     def sample_euler_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale): 
-        # latent_noise, sigmas, extra_args=None):
         """Ancestral sampling with Euler method steps."""
 
-        # xxxx_refiner 1
-        # extra_args = {}
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -236,20 +215,7 @@ class KSampler(nn.Module):
             # model --
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-            # input ----
-            # tensor [x] size: [2, 4, 75, 57], min: -2.976877, max: 3.222236, mean: -0.02592
-            # tensor [timesteps] size: [2], min: 0.0, max: 0.0, mean: 0.0
-            # tensor [context] size: [2, 77, 1280], min: -66.1875, max: 18.375, mean: 0.032318
-            # tensor [c_adm] size: [2, 2560], min: -3.958984, max: 3.410156, mean: 0.195679
-            # [control] value: None
-            # output ----
-            # tensor [output] size: [2, 4, 75, 57], min: -3.130859, max: 3.892578, mean: -0.005257   
-
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
-
-
-            # denoised = self.get_eps(latent_noise, sigmas[i], ...)
 
             sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
             d = to_d(latent_noise, sigmas[i], denoised) 
@@ -262,10 +228,8 @@ class KSampler(nn.Module):
         return latent_noise
 
     def sample_euler(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
-        # latent_noise, sigmas, extra_args=None, s_churn=0.):
         """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
 
-        # extra_args = {} if extra_args is None else extra_args
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             sigma_hat = sigmas[i]
@@ -275,9 +239,6 @@ class KSampler(nn.Module):
             # model --
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # with torch.no_grad():
-            #     denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
-            # denoised = self.diffusion_predict(latent_noise, sigmas[i], positive_tensor, negative_tensor, cond_scale)
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
 
             d = to_d(latent_noise, sigma_hat, denoised)
@@ -305,9 +266,15 @@ class KSampler(nn.Module):
 
         return torch.cat((pooled, flat.to(pooled.device)), dim=1)
 
+def create_sample_model():
+    model = KSampler()
+    model = model.eval()
+    # model = torch.jit.script(model)
+    model = model.cuda()
+    return model
 
 def test():
-    torch.backends.cudnn.enabled = True
+    # torch.backends.cudnn.enabled = True
 
     model = KSampler()
     model = model.eval()

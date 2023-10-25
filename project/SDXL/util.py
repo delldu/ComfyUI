@@ -3,6 +3,9 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from PIL import Image
+import numpy as np
 import pdb
 
 class DictToClass(object):
@@ -270,6 +273,19 @@ def image_crop_8x8(image):
         left = (W % 8) // 2
         image = image[:, :, top : H8 + top, left : W8 + left]
     return image
+
+
+def load_image(filename):
+    image = Image.open(filename).convert("RGB")
+    image = np.array(image).astype(np.float32) / 255.0
+    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
+    return image_crop_8x8(image)
+
+
+def load_torch_image(image):
+    image = image.astype(np.float32) / 255.0
+    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2)
+    return image_crop_8x8(image)
 
 
 if __name__ == "__main__":

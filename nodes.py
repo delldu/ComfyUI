@@ -1303,6 +1303,7 @@ class KSampler:
     CATEGORY = "sampling"
 
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=1.0):
+        # todos.debug.output_var("sample:latent_image", latent_image)
         return common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, 
             denoise=denoise)
 
