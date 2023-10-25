@@ -3,11 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm, trange
+import time
 
-from SDXL.unet import (
-    Timestep,
-    UNetModel,
-)
 from SDXL.util import (
     make_beta_schedule,
 )
@@ -29,8 +26,37 @@ import todos
 import pdb
 
 
+from SDXL.unet import (
+    Timestep,
+    UNetModel,
+)
+
+# class UNetModel(nn.Module):
+#     def __init__(self, version="refiner_1.0"):
+#         super(UNetModel, self).__init__()
+#         self.version = version
+
+#     def forward(self, x, timesteps=None, context=None, y=None, control=None):
+#         # input ----
+#         # tensor [x] size: [2, 4, 75, 57], min: -2.976877, max: 3.222236, mean: -0.02592
+#         # tensor [timesteps] size: [2], min: 0.0, max: 0.0, mean: 0.0
+#         # tensor [context] size: [2, 77, 1280], min: -66.1875, max: 18.375, mean: 0.032318
+#         # tensor [c_adm] size: [2, 2560], min: -3.958984, max: 3.410156, mean: 0.195679
+#         # [control] value: None
+#         # output ----
+#         # tensor [output] size: [2, 4, 75, 57], min: -3.130859, max: 3.892578, mean: -0.005257        
+#         time.sleep(1.0)
+#         return x
+
+
 def prepare_noise(latent_image, seed):
-    generator = torch.manual_seed(seed)
+    if latent_image.is_cuda:
+        generator = torch.cuda.manual_seed(seed)
+        torch.manual_seed(seed)
+    else:
+        generator = torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+
     return torch.randn(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, generator=generator, 
         device=latent_image.device)
 
@@ -63,21 +89,13 @@ def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
 
     return torch.cat([sigmas, sigmas.new_zeros([1])])
 
-class SDXLRefiner(nn.Module):
+class KSampler(nn.Module):
     def __init__(self, version="refiner_1.0"):
-        super(SDXLRefiner, self).__init__()
+        super(KSampler, self).__init__()
         self.scale_factor = 0.13025
-        self.diffusion_model = nn.Identity() # UNetModel(version=version)
-        self.vae_encode_model = nn.Identity() # VAEEncode()
-        self.vae_decode_model = nn.Identity() # VAEDecode()
-        self.clip_text_model = CLIPTextEncode(version=version).eval()
-
-        # Option models ...
-        self.clip_vision_model = nn.Identity()
-        self.control_lora_model = nn.Identity()
-
+        self.diffusion_model = UNetModel(version=version)
         self.embedder = Timestep(256)
-        self.noise_augmentor = CLIPEmbedNoiseAugmentation()
+        # self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -128,22 +146,23 @@ class SDXLRefiner(nn.Module):
         c_in = 1.0 / ((sigma ** 2 + 1.0) ** 0.5)
         return c_in
 
-    def get_eps(self, latent_noise, sigma, **kwargs):
-        # tensor [input] size: [1, 4, 75, 57], min: -3.141021, max: 3.365364, mean: -0.027016
-        # tensor [sigma] size: [1], min: 0.149319, max: 0.149319, mean: 0.149319
-        # kwargs.keys() -- ['cond', 'uncond', 'cond_scale', 'cond_concat', 'model_options', 'seed']
-
-        # sigma -- tensor([0.149319], device='cuda:0')
-        # ==> 
-        # self.get_scalings(sigma) -- (tensor([-0.149319], device='cuda:0'), tensor([0.989035], device='cuda:0'))
-        # ==> self.sigma_to_t(sigma) -- 23
-
-        # c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+    def diffusion_predict(self, latent_noise, sigma, positive_tensor, negative_tensor, cond_scale):
         c_out = -sigma
         c_in =  append_dims(self.get_scalings(sigma), latent_noise.ndim)
-        eps = latent_noise # self.get_eps(latent_noise * c_in, self.sigma_to_t(sigma), **kwargs)
+        t = self.sigma_to_t(sigma)
+        
+        # do diffusion_model.forward(x, timesteps=None, context=None, y=None, control=None)
+        with torch.no_grad():
+            eps1 = self.diffusion_model(latent_noise * c_in, timesteps=t,
+                        context = positive_tensor['text_encoded'], y=positive_tensor['adm_encoded'], control=None)
+            eps2 = self.diffusion_model(latent_noise * c_in, timesteps=t,
+                        context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
 
-        return latent_noise + eps * c_out
+        positive_predict = latent_noise + eps1 * c_out
+        negative_predict = latent_noise + eps2 * c_out
+
+        return positive_predict * cond_scale + positive_predict * (1.0 - cond_scale)
+
 
 
     def set_steps(self, steps, denoise=1.0):
@@ -158,14 +177,31 @@ class SDXLRefiner(nn.Module):
         return sigmas
 
 
-    def start_sample(self, positive, negative, latent, steps, denoise, cfg=7.5, seed=-1):
-        latent = model.process_latent_in(latent)
-        latent_noise = prepare_noise(latent, seed) # latent, seed ==> latent_noise
+    def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
+        B, C, H, W = latent_image.size()
+        positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor['pooled_output'], B, H, W, positive=True)
+        negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor['pooled_output'], B, H, W, positive=False)
 
-        sigmas = self.set_steps(steps, denoise).to(latent.device) # steps, denois ==> sigmas
-        sample = self.sample_euler_ancestral(latent, sigmas)
+        todos.debug.output_var("positive_tensor", positive_tensor)
+        todos.debug.output_var("negative_tensor", negative_tensor)
 
-        return latent # self.process_latent_out(sample)
+        sigmas = self.set_steps(steps, denoise).to(latent_image.device) # steps, denois ==> sigmas
+        todos.debug.output_var("sigmas", sigmas)
+        print("sigmas: ", sigmas)
+
+        latent_noise = self.process_latent_in(latent_image) + prepare_noise(latent_image, seed) * sigmas[0]
+        todos.debug.output_var("latent_noise", latent_noise)
+
+        # forget:  steps=20, denoise=1.0, seed=-1
+        # forward: latent_noise, positive_tensor, negative_tensor, cond_scale
+
+        # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+
+        latent_output = self.process_latent_out(sample) # sample
+
+        return latent_output
+
 
 
     def forward_x(self, x, t, c_crossattn=None, c_adm=None, control=None):
@@ -187,11 +223,12 @@ class SDXLRefiner(nn.Module):
         return latent / self.scale_factor
 
 
-    def sample_euler_ancestral(self, latent_noise, sigmas, extra_args=None):
+    def sample_euler_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale): 
+        # latent_noise, sigmas, extra_args=None):
         """Ancestral sampling with Euler method steps."""
 
         # xxxx_refiner 1
-        extra_args = {}
+        # extra_args = {}
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -200,8 +237,18 @@ class SDXLRefiner(nn.Module):
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-            with torch.no_grad():
-                denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
+            # input ----
+            # tensor [x] size: [2, 4, 75, 57], min: -2.976877, max: 3.222236, mean: -0.02592
+            # tensor [timesteps] size: [2], min: 0.0, max: 0.0, mean: 0.0
+            # tensor [context] size: [2, 77, 1280], min: -66.1875, max: 18.375, mean: 0.032318
+            # tensor [c_adm] size: [2, 2560], min: -3.958984, max: 3.410156, mean: 0.195679
+            # [control] value: None
+            # output ----
+            # tensor [output] size: [2, 4, 75, 57], min: -3.130859, max: 3.892578, mean: -0.005257   
+
+            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
+
+
             # denoised = self.get_eps(latent_noise, sigmas[i], ...)
 
             sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
@@ -214,25 +261,24 @@ class SDXLRefiner(nn.Module):
                 latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
         return latent_noise
 
-    def sample_euler(model, latent_noise, sigmas, extra_args=None, s_churn=0.):
+    def sample_euler(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
+        # latent_noise, sigmas, extra_args=None, s_churn=0.):
         """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
 
-        extra_args = {} if extra_args is None else extra_args
+        # extra_args = {} if extra_args is None else extra_args
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
-            gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1)
-            sigma_hat = sigmas[i] * (gamma + 1)
-            if gamma > 0:
-                eps = torch.randn_like(latent_noise)
-                latent_noise = latent_noise + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+            sigma_hat = sigmas[i]
 
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
             # model --
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            with torch.no_grad():
-                denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
+            # with torch.no_grad():
+            #     denoised = self.diffusion_model(latent_noise) # , sigmas[i] * s_in, **extra_args)
+            # denoised = self.diffusion_predict(latent_noise, sigmas[i], positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
 
             d = to_d(latent_noise, sigma_hat, denoised)
             dt = sigmas[i + 1] - sigma_hat
@@ -241,64 +287,56 @@ class SDXLRefiner(nn.Module):
         return latent_noise
 
 
-    def encode_adm(self, **kwargs):
-        # kwargs.keys() -- ['device', 'pooled_output', 'unclip_condition', 'width', 'height', 'prompt_type']
-        
-        clip_pooled = kwargs["pooled_output"]
-        width = kwargs.get("width", 768)
-        height = kwargs.get("height", 768)
-        crop_w = kwargs.get("crop_w", 0)
-        crop_h = kwargs.get("crop_h", 0)
-
-        if kwargs.get("prompt_type", "") == "negative":
-            aesthetic_score = kwargs.get("aesthetic_score", 2.5)
+    def encode_adm(self, pooled, B, H, W, positive=True):
+        crop_h = 0
+        crop_w = 0
+        if positive:
+            aesthetic_score = 6
         else:
-            aesthetic_score = kwargs.get("aesthetic_score", 6)
+            aesthetic_score = 2.5
 
         out = []
-        out.append(self.embedder(torch.Tensor([height])))
-        out.append(self.embedder(torch.Tensor([width])))
+        out.append(self.embedder(torch.Tensor([H])))
+        out.append(self.embedder(torch.Tensor([W])))
         out.append(self.embedder(torch.Tensor([crop_h])))
         out.append(self.embedder(torch.Tensor([crop_w])))
         out.append(self.embedder(torch.Tensor([aesthetic_score])))
-        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(clip_pooled.shape[0], 1)
-        return torch.cat((clip_pooled.to(flat.device), flat), dim=1)
+        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
+
+        return torch.cat((pooled, flat.to(pooled.device)), dim=1)
 
 
-def test_refiner():
-    model = SDXLRefiner()
+def test():
+    torch.backends.cudnn.enabled = True
+
+    model = KSampler()
     model = model.eval()
     # model = torch.jit.script(model)
-    model.cuda()
+    model = model.cuda()
 
-    positive_prompt = "bag, clean background, made from cloth"
-    negative_prompt = "watermark, text"
+    positive_tensor = {
+        "text_encoded" : torch.randn(1, 77, 1280).cuda(),
+        "pooled_output" : torch.randn(1, 1280).cuda(),
+    }
 
-    clip_token = CLIPTextTokenizer(version="refiner_1.0")
-    positive_tokens = clip_token.encode(positive_prompt)
-    negative_tokens = clip_token.encode(negative_prompt)
+    negative_tensor = {
+        "text_encoded" : torch.randn(1, 77, 1280).cuda(),
+        "pooled_output" : torch.randn(1, 1280).cuda(),
+    }
+
+    latent_image = torch.randn(1, 4, 75, 57).cuda()
+    cond_scale = 7.5
+    steps = 200
+    denoise = 0.2
+    seed = -1
+
 
     with torch.no_grad():
-        positive_tensor, positive_pooled = model.clip_text_model(positive_tokens)
+        sample_out = model(positive_tensor, negative_tensor, latent_image, cond_scale, steps, denoise, seed)
 
-    with torch.no_grad():
-        negative_tensor, negative_pooled = model.clip_text_model(negative_tokens)
+    todos.debug.output_var("sample_out", sample_out)
 
-
-    # x = torch.randn(1, 4, 146, 111).cuda()
-    # t = torch.randn(1).cuda()
-    # c_crossattn = torch.randn(1, 77, 1280).cuda()
-    # c_adm = torch.randn(1, 2560).cuda()
-    # control = None
-
-    # sigmas = model.set_steps(10, denoise=0.2).to(x.device)
-    # output = model.sample_euler_ancestral(x, sigmas)
-    # # with torch.no_grad():
-    # #     output = model(x, t, c_crossattn=c_crossattn, c_adm=c_adm, control=control)
-
-    # print(output.size()) # [1, 4, 146, 111]
-    # print(model)
-
+ 
 
 if __name__ == "__main__":
-    test_refiner()
+    test()

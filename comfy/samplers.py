@@ -327,10 +327,15 @@ class CFGNoisePredictor(torch.nn.Module):
         self.inner_model = model
         self.alphas_cumprod = model.alphas_cumprod
 
+    # xxxx_refiner_0000 3
     def apply_model(self, x, timestep, cond, uncond, cond_scale, cond_concat=None, model_options={}, seed=None):
         # x -- noise_latent_mixer
+        # tensor [x] size: [1, 4, 75, 57], min: -3.028021, max: 3.486444, mean: -0.026125
+        # tensor [timestep] size: [1], min: 23.0, max: 23.0
+
         out = sampling_function(self.inner_model.apply_model, x, timestep, uncond, cond, cond_scale, cond_concat, 
             model_options=model_options, seed=seed)
+        # tensor [out] size: [1, 4, 75, 57], min: -4.976025, max: 4.041952, mean: -0.005598
         return out
 
 
@@ -670,11 +675,12 @@ def ksampler(sampler_name, extra_options={}):
             #     # extra_options -- {}
             # sample_euler_ancestral
 
-            # xxxx_refiner_0000
+            # xxxx_refiner_0000 0
             if latent_image is not None:
                 noise += latent_image
             else:
                 pdb.set_trace()
+            # noise_latent_mixer 1 ...
             # tensor [noise + latent_image] size: [1, 4, 75, 57], min: -3.144073, max: 3.543798, mean: -0.0285, noise_latent_mixer
 
             if sampler_name == "dpm_fast":
@@ -723,7 +729,7 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
     resolve_areas_and_cond_masks(positive, noise.shape[2], noise.shape[3], device)
     resolve_areas_and_cond_masks(negative, noise.shape[2], noise.shape[3], device)
 
-    model_wrap = wrap_model(model) # xxxx_refiner
+    model_wrap = wrap_model(model)
 
     calculate_start_end_timesteps(model_wrap, negative)
     calculate_start_end_timesteps(model_wrap, positive)
@@ -739,7 +745,7 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
     apply_empty_x_to_equal_area(list(filter(lambda c: c[1].get('control_apply_to_uncond', False) == True, positive)), negative, 'control', lambda cond_cnets, x: cond_cnets[x])
     apply_empty_x_to_equal_area(positive, negative, 'gligen', lambda cond_cnets, x: cond_cnets[x])
 
-    # xxxx_refiner 0
+    # xxxx_refine_0000 2
     if model.is_adm():
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")

@@ -1262,7 +1262,7 @@ def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, 
         # xxxx_refiner
         noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
 
-    # xxxx_refine_0000
+    # xxxx_refine_0000 1
     # tensor [latent_image] size: [1, 4, 75, 57], min: -22.981834, max: 25.116404, mean: -0.20228, vae_encode_output
     # tensor [noise] size: [1, 4, 75, 57], min: -3.593438, max: 3.433766, mean: -0.015358, latent_noise
 

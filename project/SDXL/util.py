@@ -10,7 +10,18 @@ class DictToClass(object):
         if _obj:
             self.__dict__.update(_obj)
 
-def state_dict_load(checkpoint):
+def state_dict_load(model_path):
+    cdir = os.path.dirname(__file__)
+    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+
+    if not os.path.exists(checkpoint):
+        print("-" * 32, "Warnning", "-" * 32)
+        print(f"model weight file '{checkpoint}' not exist !!!")
+        return None
+
+    # file exist
+    print(f"Loading weight from {checkpoint} ...")
+
     _, extension = os.path.splitext(checkpoint)
     if extension.lower() == ".safetensors":
         import safetensors.torch
@@ -117,117 +128,55 @@ def process_refiner_clip_state_dict(state_dict):
 
 
 def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        state_dict = process_base_clip_state_dict(state_dict)
-        target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-        m, u = model.load_state_dict(target_state_dict, strict=False)
-        if len(m) > 0:
-            print(f"Load weight from {checkpoint} missing keys: ", m)
-        if len(u) > 0:
-            print(f"Load weight from {checkpoint} leftover keys: ", u)        
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    state_dict = process_base_clip_state_dict(state_dict)
+    target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+    m, u = model.load_state_dict(target_state_dict, strict=False)
+    if len(m) > 0:
+        print(f"Load weight from {model_path} missing keys: ", m)
+    if len(u) > 0:
+        print(f"Load weight from {model_path} leftover keys: ", u)        
 
 
 def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        state_dict = process_refiner_clip_state_dict(state_dict)
-        target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-        m, u = model.load_state_dict(target_state_dict, strict=False)
-        if len(m) > 0:
-            print(f"Load weight from {checkpoint} missing keys: ", m)
-        if len(u) > 0:
-            print(f"Load weight from {checkpoint} leftover keys: ", u)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    state_dict = process_refiner_clip_state_dict(state_dict)
+    target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+    m, u = model.load_state_dict(target_state_dict, strict=False)
+    if len(m) > 0:
+        print(f"Load weight from {model_path} missing keys: ", m)
+    if len(u) > 0:
+        print(f"Load weight from {model_path} leftover keys: ", u)
 
 
 def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        model.load_state_dict(state_dict)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    model.load_state_dict(state_dict)
 
 
 def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+    state_dict = state_dict_load(model_path)
+    state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv.",
+        "decoder.", "post_quant_conv."], remove_prefix=False)
 
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
+    model.load_state_dict(state_dict)
 
-        state_dict = state_dict_load(checkpoint)
-        state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv.",
-            "decoder.", "post_quant_conv."], remove_prefix=False)
-
-        model.load_state_dict(state_dict)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
 
 def load_vaeencode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv."], remove_prefix=False)
-        model.load_state_dict(state_dict)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv."], remove_prefix=False)
+    model.load_state_dict(state_dict)
 
 def load_vaedecode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        state_dict = state_dict_filter(state_dict, ["decoder.", "post_quant_conv."], remove_prefix=False)
-        model.load_state_dict(state_dict)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    state_dict = state_dict_filter(state_dict, ["decoder.", "post_quant_conv."], remove_prefix=False)
+    model.load_state_dict(state_dict)
 
 
 def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-    cdir = os.path.dirname(__file__)
-    checkpoint = model_path if cdir == "" else cdir + "/" + model_path
-
-    if os.path.exists(checkpoint):
-        print(f"Loading weight from {checkpoint} ...")
-
-        state_dict = state_dict_load(checkpoint)
-        target_state_dict = state_dict_filter(state_dict, ["model.diffusion_model."], remove_prefix=True)
-        model.load_state_dict(target_state_dict)
-    else:
-        print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+    state_dict = state_dict_load(model_path)
+    target_state_dict = state_dict_filter(state_dict, ["model.diffusion_model."], remove_prefix=True)
+    model.load_state_dict(target_state_dict)
 
 
 class Linear(nn.Module):

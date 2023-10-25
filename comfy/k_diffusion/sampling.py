@@ -173,7 +173,7 @@ def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, di
         latent_noise = latent_noise + d * dt
     return latent_noise
 
-
+# xxxx_refine_0000 3
 @torch.no_grad()
 def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, eta=1., 
     s_noise=1., noise_sampler=None):

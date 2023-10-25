@@ -52,13 +52,6 @@ class BaseModel(torch.nn.Module):
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, c_adm=None, control=None, transformer_options={}):
         # x -- noise_latent_mixer
-        todos.debug.output_var("x", x)
-        todos.debug.output_var("t", t)
-        todos.debug.output_var("c_concat", c_concat)
-        todos.debug.output_var("c_crossattn", c_crossattn)
-        todos.debug.output_var("c_adm", c_adm)
-        todos.debug.output_var("control", control)
-        todos.debug.output_var("transformer_options", transformer_options)
 
         # for refine model
         # tensor [x] size: [2, 4, 75, 57], min: -3.019421, max: 3.357514, mean: -0.024709 ????
@@ -97,8 +90,21 @@ class BaseModel(torch.nn.Module):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
         #    self.diffusion_model -- UNetModel.forward(...)
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
-        return self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # xxxx_refiner_0000 4
+        print("----------------- diffusion_model forward -----------------")
+        print("input ----")
+        todos.debug.output_var("x", x)
+        todos.debug.output_var("t", t)
+        todos.debug.output_var("context", context)
+        todos.debug.output_var("c_adm", c_adm)
+        todos.debug.output_var("control", control)
+        todos.debug.output_var("transformer_options", transformer_options)
+        output = self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
+        print("output ----")
+        todos.debug.output_var("output", output)
+
+        return output
 
     def get_dtype(self):
         return self.diffusion_model.dtype

@@ -484,13 +484,52 @@ def clip_text_model(version="base_1.0"):
 
 if __name__ == "__main__":
     import todos
+    from SDXL.tokenizer import (
+        CLIPTextTokenizer,
+    )
 
-    # model = clip_vision_model()
+    # model_version = "base_1.0"
+    model_version = "refiner_1.0"
+    print(f"model version {model_version}")
 
-    # model = clip_text_model(version="base_1.0")
-    model = clip_text_model(version="refiner_1.0")
+    model = clip_text_model(version=model_version)
+    model = model.cuda()
 
     # model = torch.jit.script(model)
     # print(model)
-    todos.debug.output_weight(model.state_dict())
+    # todos.debug.output_weight(model.state_dict())
 
+    positive_prompt = "bag, clean background, made from cloth"
+    negative_prompt = "watermark, text"
+
+    clip_token = CLIPTextTokenizer(version=model_version)
+    positive_tokens = clip_token.encode(positive_prompt)
+    print(positive_tokens)
+
+    with torch.no_grad():
+        positive_tensor, positive_pooled = model(positive_tokens)
+    todos.debug.output_var("positive_tensor", positive_tensor)
+    todos.debug.output_var("positive_pooled", positive_pooled)
+    print(
+        '''
+        # Standard
+        # tensor [cond] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082, positive_output_tensor
+        # tensor [pooled] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
+        '''
+    )
+
+
+    negative_tokens = clip_token.encode(negative_prompt)
+    print(negative_tokens)
+    with torch.no_grad():
+        negative_tensor, negative_pooled = model(negative_tokens)
+    todos.debug.output_var("negative_tensor", negative_tensor)
+    todos.debug.output_var("negative_pooled", negative_pooled)
+
+    print(
+        '''
+        # Standard 
+        # tensor [cond] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526, negative_output_tensor
+        # tensor [pooled] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
+        '''
+    )

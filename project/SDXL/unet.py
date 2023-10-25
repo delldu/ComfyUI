@@ -294,7 +294,7 @@ class UNetModel(nn.Module):
         channel_mult=(1, 2, 4),
         conv_resample=True,
         dims=2,
-        use_fp16=True,
+        use_fp16=False,
         num_heads=-1,
         num_head_channels=64,
         use_spatial_transformer=True,    # custom transformer support
