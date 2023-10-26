@@ -36,6 +36,8 @@ vae_decode = model.vae_decode
 clip_token = model.clip_token
 clip_text = model.clip_text
 
+todos.debug.output_weight(model.sample_mode.diffusion_model.state_dict())
+pdb.set_trace()
 
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8

@@ -310,6 +310,11 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
             args = {"cond": cond, "uncond": uncond, "cond_scale": cond_scale, "timestep": timestep}
             return model_options["sampler_cfg_function"](args)
         else:
+            print(f"\n t = {timestep}")
+            todos.debug.output_var("eps1", cond)
+            todos.debug.output_var("eps2", uncond)
+            todos.debug.output_var("eps", uncond + (cond - uncond) * cond_scale)
+
             return uncond + (cond - uncond) * cond_scale
 
 
@@ -644,8 +649,6 @@ def ksampler(sampler_name, extra_options={}):
             disable_pbar=False):
             # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'seed']
             
-            # todos.debug.output_var("noise", noise)
-            # todos.debug.output_var("latent_image", latent_image)
             # tensor [noise] size: [1, 4, 75, 57], min: -3.665161, max: 3.792708, mean: -0.014416
             # tensor [latent_image] size: [1, 4, 75, 57], min: -2.993385, max: 3.271434, mean: -0.026347, vae_encode_output_scale
 
@@ -719,7 +722,6 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
     #   (diffusion_model): UNetModel(...))
     # model_options = {'transformer_options': {}}
 
-    # xxxx_refiner
     # tensor [latent_image] size: [1, 4, 75, 57], min: -22.982035, max: 25.116547, mean: -0.20228, vae_encode_output
     # todos.debug.output_var("noise", noise)
     # tensor [noise] size: [1, 4, 75, 57], min: -3.665161, max: 3.792708, mean: -0.014416, latent_noise
@@ -746,7 +748,6 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
     apply_empty_x_to_equal_area(list(filter(lambda c: c[1].get('control_apply_to_uncond', False) == True, positive)), negative, 'control', lambda cond_cnets, x: cond_cnets[x])
     apply_empty_x_to_equal_area(positive, negative, 'gligen', lambda cond_cnets, x: cond_cnets[x])
 
-    # xxxx_refine_0000 2
     if model.is_adm():
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")

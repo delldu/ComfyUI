@@ -396,13 +396,14 @@ class Decoder(nn.Module):
         h = self.mid.block_2(h)
 
         # upsampling
-        # for i_level in reversed(range(self.num_resolutions)):
-        #     for i_block in range(self.num_res_blocks + 1):
-        #         h = self.up[i_level].block[i_block](h, temb)
-        #     if i_level != 0:
-        #         h = self.up[i_level].upsample(h)
-        for i in range(self.num_resolutions):
-            h = self.up_layer(self.num_resolutions - i - 1, h)
+        for i_level in reversed(range(self.num_resolutions)):
+            for i_block in range(self.num_res_blocks + 1):
+                h = self.up[i_level].block[i_block](h)
+            if i_level != 0:
+                h = self.up[i_level].upsample(h)
+        # xxxx8888
+        # for i in range(self.num_resolutions):
+        #     h = self.up_layer(self.num_resolutions - i - 1, h)
 
         # end
         h = self.norm_out(h)

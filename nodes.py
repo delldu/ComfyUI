@@ -324,7 +324,6 @@ class VAEEncode:
         pixels = self.vae_encode_crop_pixels(pixels)
         t = vae.encode(pixels[:,:,:,:3])
 
-        # xxxx_refiner
         # tensor [pixels] size: [1, 600, 456, 3], min: 0.0, max: 1.0, mean: 0.462529, vae_encode_input
         # tensor [t] size: [1, 4, 75, 57], min: -22.981936, max: 25.116529, mean: -0.20228, vae_encode_output
 
@@ -1252,13 +1251,12 @@ class SetLatentNoiseMask:
         return (s,)
 
 def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
-
     latent_image = latent["samples"]
     if disable_noise:
+        pdb.set_trace()
         noise = torch.zeros(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, device="cpu")
     else:
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
-        # xxxx_refiner
         noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
 
     # xxxx_refine_0000 1
@@ -1302,7 +1300,6 @@ class KSampler:
     CATEGORY = "sampling"
 
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=1.0):
-        # todos.debug.output_var("sample:latent_image", latent_image)
         return common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, 
             denoise=denoise)
 

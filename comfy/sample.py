@@ -80,7 +80,8 @@ def prepare_sampling(model, noise_shape, positive, negative, noise_mask):
 
     real_model = None
     models, inference_memory = get_additional_models(positive, negative, model.model_dtype())
-    comfy.model_management.load_models_gpu([model] + models, comfy.model_management.batch_area_memory(noise_shape[0] * noise_shape[2] * noise_shape[3]) + inference_memory)
+    comfy.model_management.load_models_gpu([model] + models, 
+        comfy.model_management.batch_area_memory(noise_shape[0] * noise_shape[2] * noise_shape[3]) + inference_memory)
     real_model = model.model
 
     positive_copy = broadcast_cond(positive, noise_shape[0], device)
@@ -93,16 +94,7 @@ def start_sample(model, noise, steps, cfg, sampler_name, scheduler, positive, ne
     noise_mask=None, sigmas=None, callback=None, disable_pbar=False, seed=None):
     real_model, positive_copy, negative_copy, noise_mask, models = prepare_sampling(model, noise.shape, positive, negative, noise_mask)
     # real_model -- SDXL((diffusion_model): UNetModel(...))
-    # positive_copy is list: len = 1
-    #     list [item] len: 2
-    #         tensor [item] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023275
-    #     [item] value: '{'pooled_output': tensor([[ 0.723000,  0.252679,  0.096206,  ..., -0.321235, -1.000728,
-    #          -0.789588]]), 'control': <comfy.controlnet.ControlLora object>, 'control_apply_to_uncond': False}'
-    # negative_copy is list: len = 1
-    #     list [item] len: 2
-    #         tensor [item] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023284
-    #     [item] value: '{'pooled_output': tensor([[ 0.954564,  0.917528, -0.207402,  ..., -0.011250,  0.385467,
-    #          -0.650592]]), 'control': <comfy.controlnet.ControlLora object>, 'control_apply_to_uncond': False}'
+
     # noise_mask -- None
     # models -- []
 

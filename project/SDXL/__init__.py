@@ -111,7 +111,7 @@ def create_sdxl_refiner_model():
 
     model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
     model.sample_mode.diffusion_model.load_state_dict(model_sd)
-    model.sample_mode = model.sample_mode.half().eval().cuda()
+    model.sample_mode = model.sample_mode.eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()
 
     vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)

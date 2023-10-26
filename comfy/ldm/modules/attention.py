@@ -337,11 +337,11 @@ class CrossAttention(nn.Module):
             v = self.to_v(context)
 
         if mask is None:
+            # ==> print("---- CrossAttention 1: ", optimized_attention), optimized_attention = attention_pytorch
             out = optimized_attention(q, k, v, self.heads)
         else:
             out = optimized_attention_masked(q, k, v, self.heads, mask)
         return self.to_out(out)
-
 
 class BasicTransformerBlock(nn.Module):
     def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True,

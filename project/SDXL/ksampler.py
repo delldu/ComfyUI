@@ -134,6 +134,7 @@ class KSampler(nn.Module):
         c_out = -sigma
         c_in =  append_dims(self.get_scalings(sigma), latent_noise.ndim)
         t = self.sigma_to_t(sigma)
+
         # do diffusion_model.forward(x, timesteps=None, context=None, y=None, control=None)
         with torch.no_grad():
             eps1 = self.diffusion_model(latent_noise * c_in, timesteps=t,
@@ -142,6 +143,11 @@ class KSampler(nn.Module):
                         context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
 
         eps = eps2 + (eps1 - eps2) * cond_scale # uncond + (cond - uncond) * cond_scale, get_eps
+        print(f"\n t = {t}")
+        todos.debug.output_var("eps1", eps1)
+        todos.debug.output_var("eps2", eps2)
+        todos.debug.output_var("eps", eps)
+
         return latent_noise + eps * c_out
 
 
@@ -200,7 +206,6 @@ class KSampler(nn.Module):
         for i in trange(len(sigmas) - 1):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
-            # model --
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
@@ -254,7 +259,6 @@ class KSampler(nn.Module):
 
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
-            # model --
             #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)

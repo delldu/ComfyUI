@@ -61,12 +61,12 @@ class DiscreteSchedule(nn.Module):
     def sigma_max(self):
         return self.sigmas[-1]
 
-    # def get_sigmas(self, n=None):
-    #     if n is None:
-    #         return sampling.append_zero(self.sigmas.flip(0))
-    #     t_max = len(self.sigmas) - 1
-    #     t = torch.linspace(t_max, 0, n, device=self.sigmas.device)
-    #     return sampling.append_zero(self.t_to_sigma(t))
+    def get_sigmas(self, n=None):
+        if n is None:
+            return sampling.append_zero(self.sigmas.flip(0))
+        t_max = len(self.sigmas) - 1
+        t = torch.linspace(t_max, 0, n, device=self.sigmas.device)
+        return sampling.append_zero(self.t_to_sigma(t))
 
     def sigma_to_discrete_timestep(self, sigma):
         # self.sigmas.size() -- [1000]
@@ -164,6 +164,9 @@ class DiscreteEpsDDPMDenoiser(DiscreteSchedule):
         # ==> self.sigma_to_t(sigma) -- 23
 
         c_out, c_in = [utils.append_dims(x, input.ndim) for x in self.get_scalings(sigma)]
+
+        print("---- sigma_to_t:", self.sigma_to_t(sigma), c_in)
+
         eps = self.get_eps(input * c_in, self.sigma_to_t(sigma), **kwargs)
         return input + eps * c_out
 

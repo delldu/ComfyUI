@@ -191,8 +191,7 @@ class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
-        # super(Linear, self).__init__()
-        super().__init__()
+        super(Linear, self).__init__()
         self.dtype = dtype
         self.in_features = in_features
         self.out_features = out_features
@@ -271,7 +270,6 @@ def avg_pool_nd(dims, *args, **kwargs):
         return nn.AvgPool3d(*args, **kwargs)
     raise ValueError(f"unsupported dimensions: {dims}")
 
-
 def image_crop_8x8(image):
     B, C, H, W = image.size()
     H8 = (H // 8) * 8
@@ -279,15 +277,15 @@ def image_crop_8x8(image):
     if H8 != H or W8 != W:
         top = (H % 8) // 2
         left = (W % 8) // 2
-        image = image[:, :, top : H8 + top, left : W8 + left]
+        image = image[:, 0:3, top : H8 + top, left : W8 + left]
     return image
 
 
-def load_image(filename):
-    image = Image.open(filename).convert("RGB")
-    image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
-    return image_crop_8x8(image)
+# def load_image(filename):
+#     image = Image.open(filename).convert("RGB")
+#     image = np.array(image).astype(np.float32) / 255.0
+#     image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
+#     return image_crop_8x8(image)
 
 
 def load_torch_image(image):

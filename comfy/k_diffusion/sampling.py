@@ -17,6 +17,7 @@ def append_zero(x):
 # KarrasScheduler -- sigma_min, sigma_max ...
 def get_sigmas_karras(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
+    print(f"---------- get_sigmas_karras: n = {n}, sigma_min={sigma_min}(0.0291675), sigma_max={sigma_max}(14.614642), rho={rho}")
 
     # n = 13
     # sigma_min = 0.029167532920837402

@@ -100,6 +100,7 @@ class BaseModel(torch.nn.Module):
         # todos.debug.output_var("c_adm", c_adm)
         # todos.debug.output_var("control", control)
         # todos.debug.output_var("transformer_options", transformer_options)
+        transformer_options = {} # xxxx8888
         output = self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
         # print("output ----")
         # todos.debug.output_var("output", output)

@@ -94,6 +94,7 @@ class CrossAttentionPytorch(nn.Module):
             out.transpose(1, 2).reshape(b, -1, self.heads * self.dim_head)
         )
 
+
         return self.to_out(out)
 
 # print("Using pytorch cross attention")
@@ -116,13 +117,18 @@ class BasicTransformerBlock(nn.Module):
         self.d_head = d_head
 
 
-    def forward(self, x, context=None):
+    def forward(self, x, context=None, transformer_options={}):
         n = self.norm1(x)
-        n = self.attn1(n, context=None, value=None)
+        if self.disable_self_attn:
+            context_attn1 = context
+        else:
+            context_attn1 = None
+        n = self.attn1(n, context=context_attn1, value=None)
 
         x += n
         n = self.norm2(x)
-        n = self.attn2(n, context=context, value=None)
+        context_attn2 = context
+        n = self.attn2(n, context=context_attn2, value=None)
 
         x += n
         x = self.ff(self.norm3(x)) + x
@@ -171,8 +177,7 @@ class SpatialTransformer(nn.Module):
             self.proj_out = operations.Linear(in_channels, inner_dim, dtype=dtype, device=device)
         self.use_linear = use_linear
 
-    # def forward(self, x, context=None, transformer_options={}):
-    def forward(self, x, context=None):
+    def forward(self, x, context=None, transformer_options={}):
         # note: if no context is given, cross-attention defaults to self-attention
         if not isinstance(context, list):
             context = [context] * len(self.transformer_blocks)
@@ -186,8 +191,8 @@ class SpatialTransformer(nn.Module):
             x = self.proj_in(x)
             
         for i, block in enumerate(self.transformer_blocks):
-            # transformer_options["block_index"] = i
-            x = block(x, context=context[i]) # , transformer_options=transformer_options
+            transformer_options["block_index"] = i
+            x = block(x, context=context[i], transformer_options=transformer_options)
         if self.use_linear:
             x = self.proj_out(x)
         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()

@@ -10,7 +10,7 @@ from .util import (
     checkpoint,
     avg_pool_nd,
     zero_module,
-    normalization,
+    # normalization,
     timestep_embedding,
 )
 from ..attention import SpatialTransformer
@@ -236,6 +236,7 @@ class ResBlock(TimestepBlock):
         while len(emb_out.shape) < len(h.shape):
             emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
+            pdb.set_trace()
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
             scale, shift = th.chunk(emb_out, 2, dim=1)
             h = out_norm(h) * (1 + scale) + shift
@@ -305,7 +306,7 @@ class UNetModel(nn.Module):
         use_scale_shift_norm=False,
         resblock_updown=False,
         use_new_attention_order=False,
-        use_spatial_transformer=False,    # custom transformer support
+        use_spatial_transformer=True,     # custom transformer support
         transformer_depth=1,              # custom transformer support
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
@@ -313,13 +314,17 @@ class UNetModel(nn.Module):
         disable_self_attentions=None,
         num_attention_blocks=None,
         disable_middle_self_attn=False,
-        use_linear_in_transformer=False,
+        use_linear_in_transformer=True,
         adm_in_channels=None,
         transformer_depth_middle=None,
         device=None,
         operations=comfy.ops,
     ):
         super().__init__()
+
+        if resblock_updown:
+            pdb.set_trace()
+
         assert use_spatial_transformer == True, "use_spatial_transformer has to be true"
         if use_spatial_transformer:
             assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
@@ -440,6 +445,7 @@ class UNetModel(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     if exists(disable_self_attentions):
+                        pdb.set_trace()
                         disabled_sa = disable_self_attentions[level]
                     else:
                         disabled_sa = False
@@ -451,6 +457,8 @@ class UNetModel(nn.Module):
                                 use_checkpoint=use_checkpoint, dtype=self.dtype, device=device, operations=operations
                             )
                         )
+                    else:
+                        pdb.set_trace()
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
@@ -490,6 +498,10 @@ class UNetModel(nn.Module):
         if legacy:
             #num_heads = 1
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
+
+        if disable_middle_self_attn:
+            pdb.set_trace()
+
         self.middle_block = TimestepEmbedSequential(
             ResBlock(
                 ch,
@@ -550,6 +562,7 @@ class UNetModel(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     if exists(disable_self_attentions):
+                        pdb.set_trace()
                         disabled_sa = disable_self_attentions[level]
                     else:
                         disabled_sa = False
@@ -562,6 +575,9 @@ class UNetModel(nn.Module):
                                 use_checkpoint=use_checkpoint, dtype=self.dtype, device=device, operations=operations
                             )
                         )
+                    else:
+                        pdb.set_trace()
+
                 if level and i == self.num_res_blocks[level]:
                     out_ch = ch
                     layers.append(
@@ -591,6 +607,8 @@ class UNetModel(nn.Module):
             zero_module(operations.conv_nd(dims, model_channels, out_channels, 3, padding=1, dtype=self.dtype, device=device)),
         )
         if self.predict_codebook_ids:
+            pdb.set_trace()
+            
             self.id_predictor = nn.Sequential(
             nn.GroupNorm(32, ch, dtype=self.dtype, device=device),
             operations.conv_nd(dims, model_channels, n_embed, 1, dtype=self.dtype, device=device),

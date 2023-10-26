@@ -207,24 +207,24 @@ def mean_flat(tensor):
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
-def normalization(channels, dtype=None):
-    """
-    Make a standard normalization layer.
-    :param channels: number of input channels.
-    :return: an nn.Module for normalization.
-    """
-    return GroupNorm32(32, channels, dtype=dtype)
+# def normalization(channels, dtype=None):
+#     """
+#     Make a standard normalization layer.
+#     :param channels: number of input channels.
+#     :return: an nn.Module for normalization.
+#     """
+#     return GroupNorm32(32, channels, dtype=dtype)
 
 
-# PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
-class SiLU(nn.Module):
-    def forward(self, x):
-        return x * torch.sigmoid(x)
+# # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
+# class SiLU(nn.Module):
+#     def forward(self, x):
+#         return x * torch.sigmoid(x)
 
 
-class GroupNorm32(nn.GroupNorm):
-    def forward(self, x):
-        return super().forward(x.float()).type(x.dtype)
+# class GroupNorm32(nn.GroupNorm):
+#     def forward(self, x):
+#         return super().forward(x.float()).type(x.dtype)
 
 
 def conv_nd(dims, *args, **kwargs):

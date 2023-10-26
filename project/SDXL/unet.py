@@ -43,24 +43,26 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     support it as an extra input.
     """
 
-    def forward(self, x, emb, context=None, output_shape=None):
+    def forward(self, x, emb, context=None, transformer_options={}, output_shape=None):
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
             elif isinstance(layer, SpatialTransformer):
-                x = layer(x, context)
+                x = layer(x, context, transformer_options)
             elif isinstance(layer, Upsample):
                 x = layer(x, output_shape=output_shape)
             else:
                 x = layer(x)
         return x
 
-def forward_timestep_embed(ts, x, emb, context=None, output_shape=None):
+#This is needed because accelerate makes a copy of transformer_options which breaks "current_index"
+def forward_timestep_embed(ts, x, emb, context=None, transformer_options={}, output_shape=None):
     for layer in ts:
         if isinstance(layer, TimestepBlock):
             x = layer(x, emb)
         elif isinstance(layer, SpatialTransformer):
-            x = layer(x, context)
+            x = layer(x, context, transformer_options)
+            transformer_options["current_index"] += 1
         elif isinstance(layer, Upsample):
             x = layer(x, output_shape=output_shape)
         else:
@@ -482,12 +484,17 @@ class UNetModel(nn.Module):
         # else:
         #     load_diffusion_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
-    def forward(self, x, timesteps=None, context=None, y=None, control=None):
+    def forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}):
         # x.shape -- [2, 4, 104, 157]
         # timesteps.size() -- [2]
         # context.size() -- [2, 77, 2048]
         # y.size() -- [2, 2816]
         # control.keys() -- dict_keys(['input', 'middle', 'output'])
+
+        transformer_options["original_shape"] = list(x.shape)
+        transformer_options["current_index"] = 0
+        transformer_patches = transformer_options.get("patches", {})
+        # transformer_options -- {'cond_or_uncond': [1, 0], 'original_shape': [2, 4, 75, 57], 'current_index': 0}
 
         assert (y is not None), "must specify y"
         hs = []
@@ -499,9 +506,11 @@ class UNetModel(nn.Module):
 
         h = x.type(self.dtype)
         for id, module in enumerate(self.input_blocks):
-            h = forward_timestep_embed(module, h, emb, context)
+            transformer_options["block"] = ("input", id)
+            h = forward_timestep_embed(module, h, emb, context, transformer_options)
             hs.append(h)
-        h = forward_timestep_embed(self.middle_block, h, emb, context)
+        transformer_options["block"] = ("middle", 0)
+        h = forward_timestep_embed(self.middle_block, h, emb, context, transformer_options)
         if control is not None and 'middle' in control and len(control['middle']) > 0:
             # CannyImage ==> Here, ClipVision NOT
             ctrl = control['middle'].pop()
@@ -509,6 +518,7 @@ class UNetModel(nn.Module):
                 h += ctrl
 
         for id, module in enumerate(self.output_blocks):
+            transformer_options["block"] = ("output", id)
             hsp = hs.pop()
             if control is not None and 'output' in control and len(control['output']) > 0:
                 # CannyImage ==> Here, ClipVision NOT
@@ -522,8 +532,7 @@ class UNetModel(nn.Module):
                 output_shape = hs[-1].shape
             else:
                 output_shape = None
-            h = forward_timestep_embed(module, h, emb, context, output_shape)
-
+            h = forward_timestep_embed(module, h, emb, context, transformer_options, output_shape)
         # h = h.type(x.dtype)
         return self.out(h)
 
