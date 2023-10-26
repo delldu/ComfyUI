@@ -15,9 +15,36 @@ import os
 import torch
 import todos
 # from .uni_controlnet import UniControlNet
+
 from SDXL.util import (
     DictToClass,
+    load_torch_image,
+    state_dict_load,
+    state_dict_filter,
+    refiner_clip_state_dict,
+    load_vaeencode_model_weight,
+    load_vaedecode_model_weight        
 )
+
+from SDXL.ksampler import (
+    KSampler,
+)
+
+from SDXL.vae import (
+    VAEEncode,
+    VAEDecode,
+)
+
+from SDXL.clip import (
+    CLIPTextEncode,
+    CLIPVisionEncode,
+)
+
+from SDXL.tokenizer import (
+    CLIPTextTokenizer,
+)
+
+
 import pdb
 
 # import json
@@ -68,3 +95,44 @@ def get_model(version):
     #     model.save(torch_file_name)
 
     return model, device
+
+def create_sdxl_refiner_model():
+    model_version = "refiner_1.0"
+    model_path = "models/sd_xl_refiner_1.0.safetensors"
+    model = DictToClass({
+        "sample_mode": KSampler(version=model_version),
+        "vae_encode": VAEEncode(version=model_version),
+        "vae_decode": VAEDecode(version=model_version),
+        "clip_token": CLIPTextTokenizer(version=model_version),
+        "clip_text": CLIPTextEncode(version=model_version),
+        "clip_vision": None,
+    })
+    whole_sd = state_dict_load(model_path)
+
+    model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
+    model.sample_mode.diffusion_model.load_state_dict(model_sd)
+    model.sample_mode = model.sample_mode.half().eval().cuda()
+    # model.sample_mode = model.sample_mode.eval().cuda()
+
+    vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
+    model_sd = state_dict_filter(vae_sd, ["encoder.", "quant_conv."], remove_prefix=False)
+    model.vae_encode.load_state_dict(model_sd)
+    # load_vaeencode_model_weight(model.vae_encode, model_path="models/sdxl_vae.safetensors")
+    model.vae_encode = model.vae_encode.eval()
+
+    model_sd = state_dict_filter(vae_sd, ["decoder.", "post_quant_conv."], remove_prefix=False)
+    model.vae_decode.load_state_dict(model_sd)
+    # load_vaedecode_model_weight(model.vae_decode, model_path="models/sdxl_vae.safetensors")
+    model.vae_decode = model.vae_decode.eval()
+
+    # model.clip_token load weight by self
+
+    model_sd = refiner_clip_state_dict(whole_sd)
+    m, u = model.clip_text.load_state_dict(model_sd, strict=False)
+    if len(m) > 0:
+        print(f"CLIPTextEncode load weight missing keys: ", m)
+    if len(u) > 0:
+        print(f"CLIPTextEncode load weight leftover keys: ", u)
+    model.clip_text = model.clip_text.eval()   
+
+    return model

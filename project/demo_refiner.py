@@ -15,42 +15,37 @@ import numpy as np
 import torch
 import einops
 
-import SDXL
+from SDXL import (
+    create_sdxl_refiner_model,
+)
+
 from SDXL.util import (
-    load_torch_image,        
-)
-
-from SDXL.ksampler import (
-    create_sample_model,
-)
-
-from SDXL.vae import (
-    create_vae_encode_model,
-    create_vae_decode_model,
-)
-
-from SDXL.clip import (
-    create_clip_text_model,
-    create_clip_token_model,
+    load_torch_image,
 )
 
 import todos
 import pdb
 
 
+
 # create models
-sample_mode = create_sample_model()
-vae_encode = create_vae_encode_model()
-vae_decode = create_vae_decode_model()
-clip_token = create_clip_token_model(version="refiner_1.0")
-clip_text = create_clip_text_model(version="refiner_1.0")
+model = create_sdxl_refiner_model()
+sample_mode = model.sample_mode
+vae_encode = model.vae_encode
+vae_decode = model.vae_decode
+clip_token = model.clip_token
+clip_text = model.clip_text
 
 
-# inputs = [prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed]
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8
 
-    positive_tokens = clip_token.encode(prompt + "," + a_prompt)
+    if seed == -1:
+        seed = random.randint(0, 65535)
+
+    if len(a_prompt) > 0:
+        prompt = prompt + "," + a_prompt
+    positive_tokens = clip_token.encode(prompt)
     negative_tokens = clip_token.encode(n_prompt)
 
     with torch.no_grad():
@@ -80,21 +75,24 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
 block = gr.Blocks().queue()
 with block:
     with gr.Row():
-        gr.Markdown("## SDXL Refiner Model (Version 1.0) Demo")
+        gr.Markdown("## SDXL 1.0 Refiner Model Demo")
     with gr.Row():
         with gr.Column():
             input_image = gr.Image(source='upload', type="numpy", label='Source')
 
-            prompt = gr.Textbox(label="Prompt")
+            prompt = gr.Textbox(label="Prompt", value="red bag, clean background, made from cloth")
             run_button = gr.Button(label="Run")
             with gr.Accordion("Advanced options", open=False):
-                denoise = gr.Slider(label="Control Strength", minimum=0.0, maximum=2.0, value=1.0, step=0.01)
-                time_steps = gr.Slider(label="Steps", minimum=1, maximum=100, value=20, step=1)
-                cond_scale = gr.Slider(label="Guidance Scale", minimum=0.1, maximum=30.0, value=8.0, step=0.1)
+                denoise = gr.Slider(label="Control Strength", minimum=0.0, maximum=2.0, value=0.75, step=0.01)
+                time_steps = gr.Slider(label="Steps", minimum=1, maximum=100, value=10, step=1)
+                cond_scale = gr.Slider(label="Guidance Scale", minimum=0.1, maximum=30.0, value=7.5, step=0.1)
                 seed = gr.Slider(label="Seed", minimum=-1, maximum=2147483647, value=42, step=1)
-                a_prompt = gr.Textbox(label="Added Prompt", value='best quality, extremely detailed')
-                n_prompt = gr.Textbox(label="Negative Prompt",
-                                      value='longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality')
+                # a_prompt = gr.Textbox(label="Added Prompt", value='best quality, extremely detailed')
+                a_prompt = gr.Textbox(label="Added Prompt", value='')
+                # n_prompt = gr.Textbox(label="Negative Prompt",
+                #                       value='longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality')
+                n_prompt = gr.Textbox(label="Negative Prompt", value='watermark, text')
+
         with gr.Column():
             result_gallery = gr.Gallery(label='Output', show_label=False, elem_id="gallery", 
                 columns=[2], rows=[2], object_fit="contain", height="auto")

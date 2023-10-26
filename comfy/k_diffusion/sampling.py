@@ -140,6 +140,11 @@ class BrownianTreeNoiseSampler:
 def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
     # latent_noise -- noise_latent_mixer
+    todos.debug.output_var("sample_euler extra_args['cond'][0][0]", extra_args['cond'][0][0])
+    todos.debug.output_var("sample_euler extra_args['cond'][0][1]", extra_args['cond'][0][1])
+
+    todos.debug.output_var("sample_euler extra_args['uncond'][0][0]", extra_args['uncond'][0][0])
+    todos.debug.output_var("sample_euler extra_args['uncond'][0][1]", extra_args['uncond'][0][1])
 
     extra_args = {} if extra_args is None else extra_args
     s_in = latent_noise.new_ones([latent_noise.shape[0]])
@@ -171,6 +176,8 @@ def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, di
         dt = sigmas[i + 1] - sigma_hat
         # Euler method
         latent_noise = latent_noise + d * dt
+
+    todos.debug.output_var("sample_euler latent_noise", latent_noise)
     return latent_noise
 
 # xxxx_refine_0000 3
@@ -179,26 +186,16 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
     s_noise=1., noise_sampler=None):
     """Ancestral sampling with Euler method steps."""
 
-    # tensor [latent_noise] size: [1, 4, 75, 57], min: -3.144073, max: 3.543798, mean: -0.0285, noise_latent_mixer
-    # tensor [sigmas] size: [11], min: 0.0, max: 0.149319, mean: 0.07029
-
-    # -----------------------------------------------------------------------------------------------
-    # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
-    # tensor [extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082, positive_output_tensor
-
-    # extra_args['cond'][0][1] is dict:
-    #     tensor [pooled_output] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
-    #     tensor [adm_encoded] size: [1, 2560], min: -3.958434, max: 3.203121, mean: 0.187823
-
-    # tensor [extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526, negative_output_tensor
-    
-    # extra_args['uncond'][0][1] is dict:
-    #     tensor [pooled_output] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
-    #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
     # extra_args['cond_scale'] value: 7.5
     # extra_args['model_options'] is dict:
     #     [transformer_options] value: {}
     # extra_args['denoise_mask'] -- None
+
+    todos.debug.output_var("sample_euler_ancestral extra_args['cond'][0][0]", extra_args['cond'][0][0])
+    todos.debug.output_var("sample_euler_ancestral extra_args['cond'][0][1]", extra_args['cond'][0][1])
+
+    todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][0]", extra_args['uncond'][0][0])
+    todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][1]", extra_args['uncond'][0][1])
 
     # xxxx_refiner 1
     extra_args = {} if extra_args is None else extra_args
@@ -224,6 +221,7 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
         denoised = model(latent_noise, sigmas[i] * s_in, **extra_args)
         # tensor [denoised] size: [1, 4, 75, 57], min: -2.845827, max: 3.328772, mean: -0.026764
 
+
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
             callback({'x': latent_noise, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
@@ -233,6 +231,9 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
         latent_noise = latent_noise + d * dt
         if sigmas[i + 1] > 0:
             latent_noise = latent_noise + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
+
+    todos.debug.output_var("sample_euler_ancestral latent_noise", latent_noise)
+
     return latent_noise
 
 

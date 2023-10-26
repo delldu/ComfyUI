@@ -655,6 +655,7 @@ def ksampler(sampler_name, extra_options={}):
             model_k.noise = noise
 
             if self.max_denoise(model_wrap, sigmas): # False
+                pdb.set_trace()
                 noise = noise * torch.sqrt(1.0 + sigmas[0] ** 2.0)
             else:
                 noise = noise * sigmas[0]
@@ -843,7 +844,6 @@ class KSampler:
             sigmas = torch.cat([sigmas[:-2], sigmas[-1:]])
         return sigmas
 
-    # xxxx_refiner 0
     def set_steps(self, steps, denoise=None):
         self.steps = steps
         if denoise is None or denoise > 0.9999:

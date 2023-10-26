@@ -286,6 +286,9 @@ class CLIPVisionEncode(nn.Module):
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
 
+        for param in self.parameters():
+            param.requires_grad = False
+
         load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
 
@@ -414,7 +417,7 @@ class SDXLClipG(nn.Module):
 class CLIPTextEncode(nn.Module):
     '''CLIPTextEncode'''
 
-    def __init__(self, version="base_1.0"):
+    def __init__(self, version):
         super(CLIPTextEncode, self).__init__()
         self.version = version
 
@@ -424,10 +427,13 @@ class CLIPTextEncode(nn.Module):
         else: # refiner_1.0
             self.clip_g = SDXLClipG()
 
-        if version == "base_1.0":
-            load_base_clip_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
-        else:
-            load_refiner_clip_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # if version == "base_1.0":
+        #     load_base_clip_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+        # else:
+        #     load_refiner_clip_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
     def forward(self, tokens, device=torch.device('cpu')):
         if self.version == "base_1.0":
@@ -480,7 +486,7 @@ def clip_vision_model():
     model = model.eval()
     return model   
 
-def create_clip_text_model(version="base_1.0"):
+def create_clip_text_model(version):
     # output: SdxlClipText
     # output: RefinerClipText
 
@@ -490,7 +496,7 @@ def create_clip_text_model(version="base_1.0"):
     # model = model.cuda()
     return model  
 
-def create_clip_token_model(version="base_1.0"):
+def create_clip_token_model(version):
     return CLIPTextTokenizer(version=version)
 
 
@@ -525,7 +531,6 @@ if __name__ == "__main__":
         # tensor [pooled] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
         '''
     )
-
 
     negative_tokens = clip_token.encode(negative_prompt)
     print(negative_tokens)

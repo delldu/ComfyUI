@@ -78,6 +78,8 @@ def get_pairs(word):
 
 
 def basic_clean(text):
+    text = text.replace("\n", " ")
+    # text = text.replace(",", " ")
     text = ftfy.fix_text(text)
     text = html.unescape(html.unescape(text))
     return text.strip()
@@ -250,7 +252,7 @@ class SimpleTokenizer(object):
 class CLIPTextTokenizer():
     '''CLIPTextTokenizer'''
 
-    def __init__(self, version="base_1.0"):
+    def __init__(self, version):
         super(CLIPTextTokenizer, self).__init__()
         self.version = version
 

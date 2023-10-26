@@ -283,7 +283,7 @@ class UNetModel(nn.Module):
 
     def __init__(
         self,
-        version="base_1.0",
+        version,
         image_size=32,
         in_channels=4,
         model_channels=320,
@@ -294,7 +294,7 @@ class UNetModel(nn.Module):
         channel_mult=(1, 2, 4),
         conv_resample=True,
         dims=2,
-        use_fp16=False,
+        use_fp16=True,
         num_heads=-1,
         num_head_channels=64,
         use_spatial_transformer=True,    # custom transformer support
@@ -307,6 +307,7 @@ class UNetModel(nn.Module):
         operations=SDXL.util,
     ):
         super(UNetModel, self).__init__()
+        self.version = version
         if version == "base_1.0":
             adm_in_channels = 2816
             model_channels = 320
@@ -472,10 +473,14 @@ class UNetModel(nn.Module):
             zero_module(operations.conv_nd(dims, model_channels, out_channels, 3, padding=1, dtype=self.dtype, device=device)),
         )
 
-        if version == "base_1.0":
-            load_diffusion_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
-        else:
-            load_diffusion_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+
+
+        # if version == "base_1.0":
+        #     load_diffusion_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+        # else:
+        #     load_diffusion_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
 
     def forward(self, x, timesteps=None, context=None, y=None, control=None):
         # x.shape -- [2, 4, 104, 157]
@@ -518,7 +523,8 @@ class UNetModel(nn.Module):
             else:
                 output_shape = None
             h = forward_timestep_embed(module, h, emb, context, output_shape)
-        h = h.type(x.dtype)
+
+        # h = h.type(x.dtype)
         return self.out(h)
 
 

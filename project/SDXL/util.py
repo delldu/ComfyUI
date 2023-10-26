@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from PIL import Image
 import numpy as np
+
 import pdb
 
 class DictToClass(object):
@@ -104,7 +105,7 @@ def transformers_convert(sd, prefix_from, prefix_to, number):
     return sd
 
 
-def process_base_clip_state_dict(state_dict):
+def base_clip_state_dict(state_dict):
     keys_to_replace = {}
     replace_prefix = {}
 
@@ -115,25 +116,29 @@ def process_base_clip_state_dict(state_dict):
 
     state_dict = state_dict_prefix_replace(state_dict, replace_prefix)
     state_dict = state_dict_key_replace(state_dict, keys_to_replace)
+
+    state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+
     return state_dict
 
 
-def process_refiner_clip_state_dict(state_dict):
+def refiner_clip_state_dict(state_dict):
     keys_to_replace = {}
     replace_prefix = {}
 
     state_dict = transformers_convert(state_dict, "conditioner.embedders.0.model.", "cond_stage_model.clip_g.transformer.text_model.", 32)
     keys_to_replace["conditioner.embedders.0.model.text_projection"] = "cond_stage_model.clip_g.text_projection"
     keys_to_replace["conditioner.embedders.0.model.logit_scale"] = "cond_stage_model.clip_g.logit_scale"
-
     state_dict = state_dict_key_replace(state_dict, keys_to_replace)
+    state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+
     return state_dict
 
 
 def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
     state_dict = state_dict_load(model_path)
-    state_dict = process_base_clip_state_dict(state_dict)
-    target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+    target_state_dict = base_clip_state_dict(state_dict)
+    # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
     m, u = model.load_state_dict(target_state_dict, strict=False)
     if len(m) > 0:
         print(f"Load weight from {model_path} missing keys: ", m)
@@ -143,8 +148,8 @@ def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
 def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
     state_dict = state_dict_load(model_path)
-    state_dict = process_refiner_clip_state_dict(state_dict)
-    target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+    state_dict = refiner_clip_state_dict(state_dict)
+    # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
     m, u = model.load_state_dict(target_state_dict, strict=False)
     if len(m) > 0:
         print(f"Load weight from {model_path} missing keys: ", m)
@@ -186,7 +191,9 @@ class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
-        super(Linear, self).__init__()
+        # super(Linear, self).__init__()
+        super().__init__()
+        self.dtype = dtype
         self.in_features = in_features
         self.out_features = out_features
         self.weight = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
@@ -196,6 +203,7 @@ class Linear(nn.Module):
             self.register_parameter('bias', None)
 
     def forward(self, input):
+        input = input.to(self.dtype)
         return F.linear(input, self.weight, self.bias)
 
 class Conv2d(torch.nn.Conv2d):
@@ -286,6 +294,7 @@ def load_torch_image(image):
     image = image.astype(np.float32) / 255.0
     image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2)
     return image_crop_8x8(image)
+
 
 
 if __name__ == "__main__":

@@ -92,17 +92,17 @@ class BaseModel(torch.nn.Module):
         #    self.diffusion_model -- UNetModel.forward(...)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # xxxx_refiner_0000 4
-        print("----------------- diffusion_model forward -----------------")
-        print("input ----")
-        todos.debug.output_var("x", x)
-        todos.debug.output_var("t", t)
-        todos.debug.output_var("context", context)
-        todos.debug.output_var("c_adm", c_adm)
-        todos.debug.output_var("control", control)
-        todos.debug.output_var("transformer_options", transformer_options)
+        # print("----------------- diffusion_model forward -----------------")
+        # print("input ----")
+        # todos.debug.output_var("x", x)
+        # todos.debug.output_var("t", t)
+        # todos.debug.output_var("context", context)
+        # todos.debug.output_var("c_adm", c_adm)
+        # todos.debug.output_var("control", control)
+        # todos.debug.output_var("transformer_options", transformer_options)
         output = self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
-        print("output ----")
-        todos.debug.output_var("output", output)
+        # print("output ----")
+        # todos.debug.output_var("output", output)
 
         return output
 
@@ -227,8 +227,8 @@ class SDXLRefiner(BaseModel):
             aesthetic_score = kwargs.get("aesthetic_score", 6)
 
         out = []
-        out.append(self.embedder(torch.Tensor([height])))
-        out.append(self.embedder(torch.Tensor([width])))
+        out.append(self.embedder(torch.Tensor([height]))) # 600
+        out.append(self.embedder(torch.Tensor([width]))) # 456
         out.append(self.embedder(torch.Tensor([crop_h])))
         out.append(self.embedder(torch.Tensor([crop_w])))
         out.append(self.embedder(torch.Tensor([aesthetic_score])))

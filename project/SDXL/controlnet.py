@@ -295,6 +295,9 @@ class ControlNet(nn.Module):
         )
         self.middle_block_out = self.make_zero_conv(ch, operations=operations)
 
+        for param in self.parameters():
+            param.requires_grad = False
+
 
     def make_zero_conv(self, channels, operations=None):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))

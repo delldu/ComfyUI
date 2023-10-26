@@ -608,7 +608,7 @@ class UNetModel(nn.Module):
         """
         # x -- noise_latent_mixer
         # kwargs -- {}
-        todos.debug.output_var("UNetModel.forward.x", x)
+        # todos.debug.output_var("UNetModel.forward.x", x)
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0

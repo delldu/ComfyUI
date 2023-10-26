@@ -34,6 +34,9 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
         self.register_buffer("data_mean", clip_mean[None, :], persistent=False)
         self.register_buffer("data_std", clip_std[None, :], persistent=False)
 
+        for param in self.parameters():
+            param.requires_grad = False
+
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
         # noise_schedule_config = {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2", "timestep_dim": 1280}
 

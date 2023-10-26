@@ -34,7 +34,7 @@ class AutoencoderKL(nn.Module):
               target: torch.nn.Identity
     """
 
-    def __init__(self, embed_dim=4):
+    def __init__(self, version, embed_dim=4):
         super(AutoencoderKL, self).__init__()
         ddconfig = {
             "z_channels": 4,
@@ -46,14 +46,18 @@ class AutoencoderKL(nn.Module):
             "num_res_blocks": 2,
             "dropout": 0.0,
         }
+        self.version = version
         self.encoder = Encoder(**ddconfig)
         self.quant_conv = nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
 
         self.post_quant_conv = nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.decoder = Decoder(**ddconfig)  # model size 190 M
 
+        for param in self.parameters():
+            param.requires_grad = False
+
         # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
-        load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        # load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
         x = self.encoder(x)
@@ -80,7 +84,7 @@ class AutoencoderKL(nn.Module):
 
 # create_vae_encode_model
 class VAEEncode(nn.Module):
-    def __init__(self, embed_dim=4):
+    def __init__(self, version, embed_dim=4):
         super(VAEEncode, self).__init__()
         ddconfig = {
             "z_channels": 4,
@@ -92,10 +96,14 @@ class VAEEncode(nn.Module):
             "num_res_blocks": 2,
             "dropout": 0.0,
         }
+        self.version = version
         self.encoder = Encoder(**ddconfig)
         self.quant_conv = nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
 
-        load_vaeencode_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # load_vaeencode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
         # tensor [x] size: [1, 3, 832, 1256] , min: -1.0 , max: 1.0 mean: 0.5469990968704224
@@ -112,7 +120,7 @@ class VAEEncode(nn.Module):
 
 # create_vae_decode_model
 class VAEDecode(nn.Module):
-    def __init__(self, embed_dim=4):
+    def __init__(self, version, embed_dim=4):
         super(VAEDecode, self).__init__()
         ddconfig = {
             "z_channels": 4,
@@ -124,10 +132,14 @@ class VAEDecode(nn.Module):
             "num_res_blocks": 2,
             "dropout": 0.0,
         }
+        self.version = version
         self.post_quant_conv = nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.decoder = Decoder(**ddconfig)  # model size 190 M
 
-        load_vaedecode_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # load_vaedecode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
         x = self.encoder(x)
@@ -408,8 +420,8 @@ class Decoder(nn.Module):
         return h
 
 
-def vae_model():
-    model = AutoencoderKL()
+def create_vae_model():
+    model = AutoencoderKL(version="base_1.0")
     model = model.half()
     model = model.eval()
 
@@ -419,7 +431,7 @@ def vae_model():
 def create_vae_encode_model():
     # output: SdxlVaeEncode
 
-    model = VAEEncode()
+    model = VAEEncode(version="base_1.0")
     # model = model.half()
     model = model.eval()
     # model = model.cuda()
@@ -430,7 +442,7 @@ def create_vae_encode_model():
 def create_vae_decode_model():
     # output: SdxlVaeDecode
 
-    model = VAEDecode()
+    model = VAEDecode(version="base_1.0")
     # model = model.half()
     model = model.eval()
     # model = model.cuda()
@@ -439,7 +451,7 @@ def create_vae_decode_model():
 
 
 if __name__ == "__main__":
-    model = vae_model()
+    model = create_vae_model()
     # model = create_vae_encode_model()
     # model = create_vae_decode_model()
 

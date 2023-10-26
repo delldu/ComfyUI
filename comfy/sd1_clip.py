@@ -10,6 +10,7 @@ import contextlib
 import todos
 import pdb
 
+# xxxx1111
 class ClipTokenWeightEncoder:
     def encode_token_weights(self, token_weight_pairs):
         # token_weight_pairs -- 
@@ -203,6 +204,7 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
             self.text_projection[:] = sd.pop("text_projection.weight").transpose(0, 1)
         return self.transformer.load_state_dict(sd, strict=False)
 
+# xxxx1111
 def parse_parentheses(string):
     result = []
     current_item = ""
@@ -231,6 +233,7 @@ def parse_parentheses(string):
         result.append(current_item)
     return result
 
+# xxxx1111
 def token_weights(string, current_weight):
     a = parse_parentheses(string)
     out = []
