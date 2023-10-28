@@ -45,13 +45,15 @@ class ClipVisionModel():
         inputs = self.processor(images=img, return_tensors="pt")
         comfy.model_management.load_model_gpu(self.patcher)
         pixel_values = inputs['pixel_values'].to(self.load_device)
+        # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
 
-        if self.dtype != torch.float32:
+        if self.dtype != torch.float32: # True for self.dtype -- torch.float16
             precision_scope = torch.autocast
         else:
             precision_scope = lambda a, b: contextlib.nullcontext(a)
 
         with precision_scope(comfy.model_management.get_autocast_device(self.load_device), torch.float32):
+            # self.model -- CLIPVisionModelWithProjection
             outputs = self.model(pixel_values=pixel_values, output_hidden_states=True)
 
         # outputs -- {
@@ -65,7 +67,7 @@ class ClipVisionModel():
             t = outputs[k]
             if t is not None:
                 if k == 'hidden_states':
-                    outputs["penultimate_hidden_states"] = t[-2].cpu()
+                    # outputs["penultimate_hidden_states"] = t[-2].cpu()
                     outputs["hidden_states"] = None
                 else:
                     outputs[k] = t.cpu()

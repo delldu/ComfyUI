@@ -23,7 +23,8 @@ from SDXL.util import (
     state_dict_filter,
     refiner_clip_state_dict,
     load_vaeencode_model_weight,
-    load_vaedecode_model_weight        
+    load_vaedecode_model_weight,
+    load_diffusion_model_weight,        
 )
 
 from SDXL.ksampler import (
@@ -111,6 +112,8 @@ def create_sdxl_refiner_model():
 
     model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
     model.sample_mode.diffusion_model.load_state_dict(model_sd)
+    model.sample_mode.diffusion_model = model.sample_mode.diffusion_model.eval()
+    # load_diffusion_model_weight(model.sample_mode.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")    
     model.sample_mode = model.sample_mode.eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()
 

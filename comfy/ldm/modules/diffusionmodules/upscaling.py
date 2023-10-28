@@ -5,6 +5,7 @@ from functools import partial
 
 from .util import extract_into_tensor, make_beta_schedule
 from comfy.ldm.util import default
+import todos
 import pdb
 
 class AbstractLowScaleModel(nn.Module):
@@ -42,16 +43,25 @@ class AbstractLowScaleModel(nn.Module):
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
     def q_sample(self, x_start, t, noise=None):
+        # for clip_vision
+        # x_start = tensor([[-0.533872,  3.333803, -0.678505,  ..., -2.421016, -2.733607,
+        #           0.656875]], device='cuda:0')
+        # tensor [x_start] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
+        # t = tensor([250], device='cuda:0')
+        # noise = None
+
         # noise.size() -- [1, 1280]
+        # ==> pdb.set_trace()
+
         noise = default(noise, lambda: torch.randn_like(x_start))
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
-    def forward(self, x):
-        return x, None
+    # def forward(self, x):
+    #     return x, None
 
-    def decode(self, x):
-        return x
+    # def decode(self, x):
+    #     return x
 
 
 # class SimpleImageConcat(AbstractLowScaleModel):

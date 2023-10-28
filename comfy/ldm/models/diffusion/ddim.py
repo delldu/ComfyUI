@@ -181,6 +181,7 @@ class DDIMSampler(object):
         return samples, intermediates
 
     def q_sample(self, x_start, t, noise=None):
+        pdb.set_trace()
         if noise is None:
             noise = torch.randn_like(x_start)
         return (extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +

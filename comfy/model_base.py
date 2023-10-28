@@ -162,13 +162,41 @@ class BaseModel(torch.nn.Module):
 def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge=0.0):
     # adm_inputs = []
     # noise_aug = []
+
+    # for clip_vision
+    # unclip_conditioning[0] is dict:
+    #     [clip_vision_output] value: CLIPVisionModelOutput(image_embeds=tensor([[-0.533872,  3.333803, -0.678505,  ..., -2.421016, -2.733607,
+    #           0.656875]]), last_hidden_state=tensor([[[-4.073564, -3.401794, -2.535931,  ..., -1.039717,  1.915481,
+    #           -0.377894],
+    #          [-2.325997, -0.086512,  0.133103,  ..., -1.644961,  2.748995,
+    #            1.686785],
+    #          [-3.587685,  0.271179, -1.310802,  ..., -0.516954,  3.512373,
+    #            1.208619],
+    #          ...,
+    #          [-0.252852, -0.335301, -2.916028,  ..., -0.006915,  0.656954,
+    #            3.088984],
+    #          [ 0.113947, -5.641780, -0.418418,  ...,  0.432994,  0.152186,
+    #           -0.313257],
+    #          [-0.903907,  2.624458, -1.297092,  ...,  4.153544, -0.063884,
+    #            1.956106]]]), hidden_states=None, attentions=None)
+    #     [strength] value: 1.0
+    #     [noise_augmentation] value: 0.0
+
     for unclip_cond in unclip_conditioning:
         for adm_cond in unclip_cond["clip_vision_output"].image_embeds:
-            weight = unclip_cond["strength"]
-            noise_augment = unclip_cond["noise_augmentation"]
-            noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment)
+            # adm_cond ==> unclip_conditioning[0]['clip_vision_output'].image_embeds.size() -- [1, 1280]
+
+            weight = unclip_cond["strength"] # 1.0
+            noise_augment = unclip_cond["noise_augmentation"] # 0.25
+
+            # noise_augmentor.max_noise_level -- 1000
+            # tensor [adm_cond] size: [1280], min: -5.467596, max: 5.339845, mean: -0.032329
+            noise_level = round((noise_augmentor.max_noise_level - 1) * noise_augment) # ==> 0
+            # noise_augmentor --CLIPEmbedNoiseAugmentation((time_embed): Timestep())
+
             c_adm, noise_level_emb = noise_augmentor(adm_cond.to(device), 
                 noise_level=torch.tensor([noise_level], device=device))
+
             adm_out = torch.cat((c_adm, noise_level_emb), 1) * weight
             # noise_aug.append(noise_augment)
             # adm_inputs.append(adm_out)
@@ -199,7 +227,7 @@ class SD21UNCLIP(BaseModel):
 
 def sdxl_pooled(args, noise_augmentor):
     if "unclip_conditioning" in args:
-        # revision ==> pdb.set_trace()
+        # revision ==> 
         return unclip_adm(args.get("unclip_conditioning", None), args["device"], noise_augmentor)[:,:1280]
     else:
         return args["pooled_output"]

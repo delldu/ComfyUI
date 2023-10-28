@@ -79,7 +79,7 @@ class Upsample(nn.Module):
     """
 
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
-        super(Upsample, self).__init__()
+        super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -116,7 +116,7 @@ class Downsample(nn.Module):
     """
 
     def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
-        super(Downsample, self).__init__()
+        super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
@@ -165,7 +165,7 @@ class ResBlock(TimestepBlock):
         device=None,
         operations=SDXL.util
     ):
-        super(ResBlock, self).__init__()
+        super().__init__()
         self.channels = channels
         self.emb_channels = emb_channels
         self.dropout = dropout
@@ -232,7 +232,7 @@ class ResBlock(TimestepBlock):
 
 class Timestep(nn.Module):
     def __init__(self, dim):
-        super(Timestep, self).__init__()
+        super().__init__()
         self.dim = dim
 
     def forward(self, t):
@@ -308,7 +308,7 @@ class UNetModel(nn.Module):
         device=None,
         operations=SDXL.util,
     ):
-        super(UNetModel, self).__init__()
+        super().__init__()
         self.version = version
         if version == "base_1.0":
             adm_in_channels = 2816
@@ -479,11 +479,6 @@ class UNetModel(nn.Module):
             param.requires_grad = False
 
 
-        # if version == "base_1.0":
-        #     load_diffusion_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
-        # else:
-        #     load_diffusion_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
-
     def forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}):
         # x.shape -- [2, 4, 104, 157]
         # timesteps.size() -- [2]
@@ -533,6 +528,8 @@ class UNetModel(nn.Module):
             else:
                 output_shape = None
             h = forward_timestep_embed(module, h, emb, context, transformer_options, output_shape)
+
+        # h.dtype -- torch.float16
         # h = h.type(x.dtype)
         return self.out(h)
 
@@ -541,6 +538,7 @@ def sdxl_unet_model():
     # output: SdxlUnetModel
 
     model = UNetModel(version="base_1.0")
+    load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
     model = model.eval()
     return model    
 
@@ -549,13 +547,15 @@ def refiner_unet_model():
     # output: RefinerUnetModel
 
     model = UNetModel(version="refiner_1.0")
+    load_diffusion_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")    
+
     model = model.eval()
     return model    
 
 if __name__ == "__main__":
     import todos
 
-    model = sdxl_unet_model()
+    # model = sdxl_unet_model()
     # model = torch.jit.script(model)
     # print(model)
 
@@ -563,5 +563,6 @@ if __name__ == "__main__":
     # model = torch.jit.script(model)
     # print(model)
 
+    model = refiner_unet_model()
 
     todos.debug.output_weight(model.state_dict())

@@ -616,14 +616,6 @@ class UNetModel(nn.Module):
         )
 
     def forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}, **kwargs):
-        """
-        Apply the model to an input batch.
-        :param x: an [N x C x ...] Tensor of inputs.
-        :param timesteps: a 1-D batch of timesteps.
-        :param context: conditioning plugged in via crossattn
-        :param y: an [N] Tensor of labels, if class-conditional.
-        :return: an [N x C x ...] Tensor of outputs.
-        """
         # x -- noise_latent_mixer
         # kwargs -- {}
         # todos.debug.output_var("UNetModel.forward.x", x)
@@ -680,6 +672,7 @@ class UNetModel(nn.Module):
             else:
                 output_shape = None
             h = forward_timestep_embed(module, h, emb, context, transformer_options, output_shape)
+
         h = h.type(x.dtype)
         if self.predict_codebook_ids:
             return self.id_predictor(h)

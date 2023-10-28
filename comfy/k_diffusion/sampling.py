@@ -198,14 +198,12 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
     todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][0]", extra_args['uncond'][0][0])
     todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][1]", extra_args['uncond'][0][1])
 
-    # xxxx_refiner 1
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_latent_noise_sampler(latent_noise) if noise_sampler is None else noise_sampler
     s_in = latent_noise.new_ones([latent_noise.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
-        # model --
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model --
@@ -216,12 +214,10 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
         #         (diffusion_model): UNetModel(...)))))
 
         # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
-        # xxxx_refiner 2
         # model.forward.__code__ -- samplers.py, line 339, KSamplerX0Inpaint.forward
         # protype: forward(self, x, sigma, uncond, cond, cond_scale, denoise_mask, cond_concat=None, model_options={}, seed=None)
         denoised = model(latent_noise, sigmas[i] * s_in, **extra_args)
         # tensor [denoised] size: [1, 4, 75, 57], min: -2.845827, max: 3.328772, mean: -0.026764
-
 
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
@@ -276,8 +272,16 @@ def sample_dpm_2(model, x, sigmas, extra_args=None, callback=None, disable=None,
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
+            pdb.set_trace()
             eps = torch.randn_like(x) * s_noise
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model_forward
+        #
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        pdb.set_trace()
+
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
@@ -305,11 +309,17 @@ def sample_dpm_2_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
     noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
     s_in = x.new_ones([x.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # model_forward
+        #
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        pdb.set_trace()
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         d = to_d(x, sigmas[i], denoised)
+
         if sigma_down == 0:
             # Euler method
             dt = sigma_down - sigmas[i]
@@ -320,6 +330,7 @@ def sample_dpm_2_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
             dt_1 = sigma_mid - sigmas[i]
             dt_2 = sigma_down - sigmas[i]
             x_2 = x + d * dt_1
+            
             denoised_2 = model(x_2, sigma_mid * s_in, **extra_args)
             d_2 = to_d(x_2, sigma_mid, denoised_2)
             x = x + d_2 * dt_2
@@ -483,7 +494,8 @@ class DPMSolver(nn.Module):
 
         return x
 
-    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05, pcoeff=0., icoeff=1., dcoeff=0., accept_safety=0.81, eta=0., s_noise=1., noise_sampler=None):
+    def dpm_solver_adaptive(self, x, t_start, t_end, order=3, rtol=0.05, atol=0.0078, h_init=0.05, pcoeff=0., icoeff=1., 
+        dcoeff=0., accept_safety=0.81, eta=0., s_noise=1., noise_sampler=None):
         noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
         if order not in {2, 3}:
             raise ValueError('order should be 2 or 3')
@@ -532,13 +544,15 @@ class DPMSolver(nn.Module):
             info['steps'] += 1
 
             if self.info_callback is not None:
-                self.info_callback({'x': x, 'i': info['steps'] - 1, 't': s, 't_up': s, 'denoised': denoised, 'error': error, 'h': pid.h, **info})
+                self.info_callback({'x': x, 'i': info['steps'] - 1, 't': s, 't_up': s, 'denoised': denoised, 
+                    'error': error, 'h': pid.h, **info})
 
         return x, info
 
 
 @torch.no_grad()
-def sample_dpm_fast(model, x, sigma_min, sigma_max, n, extra_args=None, callback=None, disable=None, eta=0., s_noise=1., noise_sampler=None):
+def sample_dpm_fast(model, x, sigma_min, sigma_max, n, extra_args=None, callback=None, disable=None, eta=0., s_noise=1., 
+    noise_sampler=None):
     """DPM-Solver-Fast (fixed step size). See https://arxiv.org/abs/2206.00927."""
     if sigma_min <= 0 or sigma_max <= 0:
         raise ValueError('sigma_min and sigma_max must not be 0')

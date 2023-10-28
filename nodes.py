@@ -692,7 +692,7 @@ class ControlNetApplyAdvanced:
     FUNCTION = "apply_controlnet"
 
     CATEGORY = "conditioning"
-
+    # xxxx_canny
     def apply_controlnet(self, positive, negative, control_net, image, strength, start_percent, end_percent):
         if strength == 0:
             return (positive, negative)
@@ -795,7 +795,16 @@ class CLIPVisionEncode:
     CATEGORY = "conditioning"
 
     def encode(self, clip_vision, image):
+        todos.debug.output_var("clip_vision: image", image)
+        # tensor [clip_vision: image] size: [1, 512, 512, 3], min: 0.0, max: 1.0, mean: 0.323557
+
         output = clip_vision.encode_image(image)
+        todos.debug.output_var("clip_vision: output", output)
+        # clip_vision: output is dict:
+        #     tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
+        #     tensor [last_hidden_state] size: [1, 257, 1664], min: -87.028084, max: 185.91069, mean: -0.343142
+        #     [hidden_states] value: None
+
         return (output,)
 
 class StyleModelLoader:
@@ -857,7 +866,6 @@ class unCLIPConditioning:
 
         # clip_vision_output -- <class 'transformers.models.clip.modeling_clip.CLIPVisionModelOutput'>
         # clip_vision_output.image_embeds.size() -- [1, 1280]
-        # clip_vision_output.last_hidden_state.size() -- [1, 257, 1664]
         # clip_vision_output.hidden_states -- None
         # clip_vision_output.attentions -- None
         # strength -- 1.0
@@ -882,19 +890,8 @@ class unCLIPConditioning:
         #     tensor [pooled_output] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
         #     list [unclip_conditioning] len: 1
         #     [item] value: '{'clip_vision_output': CLIPVisionModelOutput(image_embeds=tensor([[-0.533872,  3.333803, -0.678505,  ..., -2.421016, -2.733607,
-        #           0.656875]]), last_hidden_state=tensor([[[-4.073564, -3.401794, -2.535931,  ..., -1.039717,  1.915481,
-        #           -0.377894],
-        #          [-2.325997, -0.086512,  0.133103,  ..., -1.644961,  2.748995,
-        #            1.686785],
-        #          [-3.587685,  0.271179, -1.310802,  ..., -0.516954,  3.512373,
-        #            1.208619],
-        #          ...,
-        #          [-0.252852, -0.335301, -2.916028,  ..., -0.006915,  0.656954,
-        #            3.088984],
-        #          [ 0.113947, -5.641780, -0.418418,  ...,  0.432994,  0.152186,
-        #           -0.313257],
-        #          [-0.903907,  2.624458, -1.297092,  ...,  4.153544, -0.063884,
-        #            1.956106]]]), hidden_states=None, attentions=None), 'strength': 1.0, 'noise_augmentation': 0.01}'
+        #           0.656875]]), 
+        # 'strength': 1.0, 'noise_augmentation': 0.01}'
 
         return (c, )
 

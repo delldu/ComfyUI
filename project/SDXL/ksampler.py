@@ -6,6 +6,9 @@ from tqdm import trange
 from SDXL.util import (
     make_beta_schedule,
 )
+from SDXL.noise import (
+    CLIPEmbedNoiseAugmentation,
+)
 
 import todos
 import pdb
@@ -77,6 +80,7 @@ class KSampler(nn.Module):
         self.scale_factor = 0.13025
         self.diffusion_model = UNetModel(version=version)
         self.embedder = Timestep(256)
+        self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -136,20 +140,28 @@ class KSampler(nn.Module):
         t = self.sigma_to_t(sigma)
 
         # do diffusion_model.forward(x, timesteps=None, context=None, y=None, control=None)
+        # with torch.no_grad():
+        #     eps1 = self.diffusion_model(latent_noise * c_in, timesteps=t,
+        #                 context = positive_tensor['text_encoded'], y=positive_tensor['adm_encoded'], control=None)
+        #     eps2 = self.diffusion_model(latent_noise * c_in, timesteps=t,
+        #                 context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
+
+        x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0)
+        t2 = torch.cat((t, t), dim=0)
+        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0)
+        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0)
         with torch.no_grad():
-            eps1 = self.diffusion_model(latent_noise * c_in, timesteps=t,
-                        context = positive_tensor['text_encoded'], y=positive_tensor['adm_encoded'], control=None)
-            eps2 = self.diffusion_model(latent_noise * c_in, timesteps=t,
-                        context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
+            e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=None)
+            eps1 = e2[0:1, :, :, :]
+            eps2 = e2[1:2, :, :, :]
 
         eps = eps2 + (eps1 - eps2) * cond_scale # uncond + (cond - uncond) * cond_scale, get_eps
-        print(f"\n t = {t}")
-        todos.debug.output_var("eps1", eps1)
-        todos.debug.output_var("eps2", eps2)
-        todos.debug.output_var("eps", eps)
+        # print(f"\n t = {t}")
+        # todos.debug.output_var("eps1", eps1)
+        # todos.debug.output_var("eps2", eps2)
+        # todos.debug.output_var("eps", eps)
 
         return latent_noise + eps * c_out
-
 
     def set_steps(self, steps, denoise=1.0):
         if denoise > 0.9999:
@@ -160,7 +172,6 @@ class KSampler(nn.Module):
             sigmas = get_karras_sigmas(new_steps)
             sigmas = sigmas[-(steps + 1):]
         return sigmas
-
 
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
         B, C, H, W = latent_image.size()
@@ -180,6 +191,12 @@ class KSampler(nn.Module):
 
         # forget:  steps=20, denoise=1.0, seed=-1
         # forward: latent_noise, positive_tensor, negative_tensor, cond_scale
+
+        # https://github.com/lllyasviel/Fooocus
+        # DPM family seems well-suited for XL, since XL sometimes generates overly smooth texture but DPM family sometimes 
+        # generate overly dense detail in texture. Their joint effect looks neutral and appealing to human perception.
+
+        # sample_dpm2_ancestral
 
         # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
         sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)

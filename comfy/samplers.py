@@ -332,7 +332,6 @@ class CFGNoisePredictor(torch.nn.Module):
         self.inner_model = model
         self.alphas_cumprod = model.alphas_cumprod
 
-    # xxxx_refiner_0000 3
     def apply_model(self, x, timestep, cond, uncond, cond_scale, cond_concat=None, model_options={}, seed=None):
         # x -- noise_latent_mixer
         # tensor [x] size: [1, 4, 75, 57], min: -3.028021, max: 3.486444, mean: -0.026125
@@ -639,6 +638,7 @@ class UNIPCBH2(Sampler):
     def sample(self, model_wrap, sigmas, extra_args, callback, noise, latent_image=None, denoise_mask=None, disable_pbar=False):
         return uni_pc.sample_unipc(model_wrap, noise, latent_image, sigmas, sampling_function=sampling_function, max_denoise=self.max_denoise(model_wrap, sigmas), extra_args=extra_args, noise_mask=denoise_mask, callback=callback, variant='bh2', disable=disable_pbar)
 
+# xxxx_clip_vision
 KSAMPLER_NAMES = ["euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral",
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
                   "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm"]
@@ -658,7 +658,7 @@ def ksampler(sampler_name, extra_options={}):
             model_k.noise = noise
 
             if self.max_denoise(model_wrap, sigmas): # False
-                pdb.set_trace()
+                #clip_vision ==> pdb.set_trace()
                 noise = noise * torch.sqrt(1.0 + sigmas[0] ** 2.0)
             else:
                 noise = noise * sigmas[0]
@@ -679,7 +679,6 @@ def ksampler(sampler_name, extra_options={}):
             #     # extra_options -- {}
             # sample_euler_ancestral
 
-            # xxxx_refiner_0000 0
             if latent_image is not None:
                 noise += latent_image
             else:
@@ -692,6 +691,7 @@ def ksampler(sampler_name, extra_options={}):
             elif sampler_name == "dpm_adaptive":
                 samples = k_diffusion_sampling.sample_dpm_adaptive(model_k, noise, sigma_min, sigmas[0], extra_args=extra_args, callback=k_callback, disable=disable_pbar)
             else:
+                # sample_dpm_2_ancestral, sample_dpm_2
                 samples = getattr(k_diffusion_sampling, "sample_{}".format(sampler_name))(model_k, noise, sigmas, extra_args=extra_args, callback=k_callback, disable=disable_pbar, **extra_options)
             return samples
     return KSAMPLER
@@ -752,7 +752,6 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")
 
-    # xxxx_refiner_0000
     if latent_image is not None:
         latent_image = model.process_latent_in(latent_image)
     # tensor [latent_image] size: [1, 4, 75, 57], min: -2.993397, max: 3.271428, mean: -0.026347, vae_encode_output_scale (0.13025)
@@ -776,10 +775,9 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
                     cond_concat.append(blank_inpaint_image_like(noise))
         extra_args["cond_concat"] = cond_concat
 
-    # sampler -- sample_euler_ancestral
+    # sampler -- sample_euler_ancestral, sample_dpm_2_ancestral, sample_dpm_2
     samples = sampler.euler_sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
 
-    # xxxx_refiner_0000
     return model.process_latent_out(samples.to(torch.float32))
 
 SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"]
