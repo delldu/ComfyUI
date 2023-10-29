@@ -54,7 +54,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     with torch.no_grad():
         positive_tensor = clip_text(positive_tokens)
         negative_tensor = clip_text(negative_tokens)
-        latent_image = torch.zeros([1, 4, 128, 128])
+        latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
 
     with torch.no_grad():
@@ -63,6 +63,9 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     # tensor [clip_embeds] size: [1, 1280], min: -6.218077, max: 4.338432, mean: -0.038565
 
     todos.debug.output_var("clip_embeds", clip_embeds)
+    # pdb.set_trace()
+
+    positive_tensor['pooled_output'] = clip_embeds
 
     # OK
     # tensor [clip_vision: image] size: [1, 512, 512, 3], min: 0.0, max: 1.0, mean: 0.323557
@@ -97,9 +100,9 @@ with block:
             prompt = gr.Textbox(label="Prompt", value="red bag, clean background, made from cloth")
             run_button = gr.Button(label="Run")
             with gr.Accordion("Advanced options", open=False):
-                denoise = gr.Slider(label="Control Strength", minimum=0.0, maximum=2.0, value=0.75, step=0.01)
-                time_steps = gr.Slider(label="Steps", minimum=1, maximum=100, value=10, step=1)
-                cond_scale = gr.Slider(label="Guidance Scale", minimum=0.1, maximum=30.0, value=7.5, step=0.1)
+                denoise = gr.Slider(label="Control Strength", minimum=0.0, maximum=2.0, value=1.0, step=0.01)
+                time_steps = gr.Slider(label="Steps", minimum=1, maximum=100, value=20, step=1)
+                cond_scale = gr.Slider(label="Guidance Scale", minimum=0.1, maximum=30.0, value=8.0, step=0.1)
                 seed = gr.Slider(label="Seed", minimum=-1, maximum=2147483647, value=42, step=1)
                 # a_prompt = gr.Textbox(label="Added Prompt", value='best quality, extremely detailed')
                 a_prompt = gr.Textbox(label="Added Prompt", value='')

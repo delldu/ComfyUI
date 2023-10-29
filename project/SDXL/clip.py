@@ -520,7 +520,11 @@ class CLIPTextEncode(nn.Module):
             l_out, l_pooled = self.clip_l(torch.LongTensor(token_l).to(device))
             g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
-            return torch.cat([l_out, g_out], dim=-1), g_pooled
+            # return torch.cat([l_out, g_out], dim=-1), g_pooled
+            return {
+                "text_encoded" : torch.cat([l_out, g_out], dim=-1), 
+                "pooled_output" : g_pooled
+            }
 
         # refiner_1.0 version
         token_g = tokens['g']

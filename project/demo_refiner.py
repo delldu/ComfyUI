@@ -57,7 +57,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         if input_image is not None:
             latent_image = vae_encode(load_torch_image(input_image))
         else:
-            latent_image = torch.zeros([1, 4, 128, 128])
+            latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
     for k, v in positive_tensor.items():
         positive_tensor[k] = v.cuda()

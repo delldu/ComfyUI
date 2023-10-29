@@ -79,8 +79,8 @@ class KSampler(nn.Module):
 
         self.scale_factor = 0.13025
         self.diffusion_model = UNetModel(version=version)
-        self.embedder = Timestep(256)
-        self.noise_augmentor = CLIPEmbedNoiseAugmentation()
+        # self.embedder = Timestep(256)
+        # self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -314,19 +314,20 @@ class KSampler(nn.Module):
 
 
     def encode_adm(self, pooled, B, H, W, positive=True):
-        crop_h = 0
-        crop_w = 0
-        aesthetic_score = 6.0 if positive else 2.5
+        return pooled
+        # crop_h = 0
+        # crop_w = 0
+        # aesthetic_score = 6.0 if positive else 2.5
 
-        out = []
-        out.append(self.embedder(torch.Tensor([H * 8]))) # H * 8 -- 600
-        out.append(self.embedder(torch.Tensor([W * 8]))) # W * 8 -- 456
-        out.append(self.embedder(torch.Tensor([crop_h])))
-        out.append(self.embedder(torch.Tensor([crop_w])))
-        out.append(self.embedder(torch.Tensor([aesthetic_score])))
-        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
+        # out = []
+        # out.append(self.embedder(torch.Tensor([H * 8]))) # H * 8 -- 600
+        # out.append(self.embedder(torch.Tensor([W * 8]))) # W * 8 -- 456
+        # out.append(self.embedder(torch.Tensor([crop_h])))
+        # out.append(self.embedder(torch.Tensor([crop_w])))
+        # out.append(self.embedder(torch.Tensor([aesthetic_score])))
+        # flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
 
-        return torch.cat((pooled, flat.to(pooled.device)), dim=1)
+        # return torch.cat((pooled, flat.to(pooled.device)), dim=1)
 
 def create_ksampler_model(version):
     model = KSampler(version=version)
@@ -356,7 +357,6 @@ def test():
     steps = 200
     denoise = 0.2
     seed = -1
-
 
     with torch.no_grad():
         sample_out = model(positive_tensor, negative_tensor, latent_image, cond_scale, steps, denoise, seed)

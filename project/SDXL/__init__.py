@@ -29,8 +29,12 @@ from SDXL.util import (
     load_diffusion_model_weight,        
 )
 
-from SDXL.ksampler import (
-    KSampler,
+# from SDXL.ksampler import (
+#     KSampler,
+# )
+from SDXL.model import (
+    SDXLBase,
+    SDXLRefiner,
 )
 
 from SDXL.vae import (
@@ -105,7 +109,7 @@ def create_sdxl_base_model():
     model_version = "base_1.0"
     model_path = "models/sd_xl_base_1.0.safetensors"
     model = DictToClass({
-        "sample_mode": KSampler(version=model_version),
+        "sample_mode": SDXLBase(),
         "vae_encode": VAEEncode(version=model_version),
         "vae_decode": VAEDecode(version=model_version),
         "clip_token": CLIPTextTokenizer(version=model_version),
@@ -152,7 +156,7 @@ def create_sdxl_refiner_model():
     model_version = "refiner_1.0"
     model_path = "models/sd_xl_refiner_1.0.safetensors"
     model = DictToClass({
-        "sample_mode": KSampler(version=model_version),
+        "sample_mode": SDXLRefiner(),
         "vae_encode": VAEEncode(version=model_version),
         "vae_decode": VAEDecode(version=model_version),
         "clip_token": CLIPTextTokenizer(version=model_version),
