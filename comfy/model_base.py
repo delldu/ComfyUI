@@ -100,10 +100,8 @@ class BaseModel(torch.nn.Module):
         # todos.debug.output_var("c_adm", c_adm)
         # todos.debug.output_var("control", control)
         # todos.debug.output_var("transformer_options", transformer_options)
-        transformer_options = {} # xxxx8888
+        transformer_options = {}
         output = self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
-        # print("output ----")
-        # todos.debug.output_var("output", output)
 
         return output
 
@@ -274,6 +272,11 @@ class SDXL(BaseModel):
         # kwargs -- 
         # {'device': device(type='cuda', index=0), 'pooled_output': tensor([[ 0.5246, -0.2884, -0.2883,  ..., -0.6900,  1.4370, -1.0179]]), 'control': <comfy.controlnet.ControlLora object at 0x7fee48d770a0>, 
         #     'width': 1256, 'height': 832, 'prompt_type': 'positive'}
+
+        # clip_vision postitive ???
+        # kwargs.keys() -- ['device', 'pooled_output', 'unclip_conditioning', 'width', 'height', 'prompt_type']
+        # width, height -- 1024
+        # for negative, tensor [clip_pooled] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
 
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
         width = kwargs.get("width", 768)

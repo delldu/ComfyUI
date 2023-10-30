@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.transforms as T
 
 from PIL import Image
 import numpy as np
@@ -159,7 +160,7 @@ def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.s
 
 def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
     state_dict = state_dict_load(model_path)
-    model.load_state_dict(state_dict)
+    return model.load_state_dict(state_dict)
 
 
 def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
@@ -189,9 +190,10 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 device=None, dtype=None) -> None:
+                 device=None, dtype=torch.float32) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(Linear, self).__init__()
+        self.biasx = bias
         self.dtype = dtype
         self.in_features = in_features
         self.out_features = out_features
@@ -204,6 +206,9 @@ class Linear(nn.Module):
     def forward(self, input):
         input = input.to(self.dtype)
         return F.linear(input, self.weight, self.bias)
+
+    def __repr__(self):
+        return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
 
 class Conv2d(torch.nn.Conv2d):
     def reset_parameters(self):
@@ -281,11 +286,23 @@ def image_crop_8x8(image):
     return image
 
 
-# def load_image(filename):
-#     image = Image.open(filename).convert("RGB")
-#     image = np.array(image).astype(np.float32) / 255.0
-#     image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
-#     return image_crop_8x8(image)
+def load_image(filename):
+    image = Image.open(filename).convert("RGB")
+    image = np.array(image).astype(np.float32) / 255.0
+    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
+    return image_crop_8x8(image)
+
+
+def load_clip_vision_image(filename):
+    image = Image.open(filename).convert("RGB")
+    image = np.array(image).astype(np.float32) / 255.0
+    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
+    image = F.interpolate(image, size=(224, 224), mode="bilinear", align_corners=False)
+    # image normal
+    image = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])(image)
+    # image = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(image)
+
+    return image    
 
 
 def load_torch_image(image):

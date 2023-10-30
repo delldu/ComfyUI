@@ -438,6 +438,7 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
 
     if model_config.clip_vision_prefix is not None:
         if output_clipvision:
+            pdb.set_trace()
             clipvision = clip_vision.load_clipvision_from_sd(sd, model_config.clip_vision_prefix, True)
 
     if output_model:

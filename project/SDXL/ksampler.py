@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import numpy as np
@@ -156,10 +157,6 @@ class KSampler(nn.Module):
             eps2 = e2[1:2, :, :, :]
 
         eps = eps2 + (eps1 - eps2) * cond_scale # uncond + (cond - uncond) * cond_scale, get_eps
-        # print(f"\n t = {t}")
-        # todos.debug.output_var("eps1", eps1)
-        # todos.debug.output_var("eps2", eps2)
-        # todos.debug.output_var("eps", eps)
 
         return latent_noise + eps * c_out
 
@@ -175,18 +172,25 @@ class KSampler(nn.Module):
 
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
         B, C, H, W = latent_image.size()
-        positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor['pooled_output'], B, H, W, positive=True)
-        negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor['pooled_output'], B, H, W, positive=False)
+        positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor['pooled_output'], H, W, positive=True)
+        negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor['pooled_output'], H, W, positive=False)
+
+        if positive_tensor['text_encoded'].abs().sum().item() < 0.01: # is clip_vision ?
+            positive_tensor['pooled_output'].fill_(0.0)
 
         todos.debug.output_var("positive_tensor", positive_tensor)
         todos.debug.output_var("negative_tensor", negative_tensor)
 
         sigmas = self.set_steps(steps, denoise).to(latent_image.device) # steps, denois ==> sigmas
-        # todos.debug.output_var("sigmas", sigmas)
-        # print("sigmas: ", sigmas)
+
+        noise = prepare_noise(latent_image, seed)
+        if math.isclose(float(self.sigmas[-1]), float(sigmas[0]), rel_tol=1e-05):
+            noise = noise * torch.sqrt(1.0 + sigmas[0] ** 2.0)
+        else:
+            noise = noise * sigmas[0]
 
         latent_image = self.process_latent_in(latent_image)
-        latent_noise = latent_image + prepare_noise(latent_image, seed) * sigmas[0]
+        latent_noise = latent_image + noise # prepare_noise(latent_image, seed) * sigmas[0]
         todos.debug.output_var("latent_noise", latent_noise)
 
         # forget:  steps=20, denoise=1.0, seed=-1
@@ -198,8 +202,8 @@ class KSampler(nn.Module):
 
         # sample_dpm2_ancestral
 
-        # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
         latent_output = self.process_latent_out(sample) # sample
 

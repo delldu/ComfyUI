@@ -5,11 +5,16 @@ from torch import nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 
+# import SDXL.util
+
 from SDXL.util import (
     DictToClass,
     load_model_weight,
     load_base_clip_model_weight,
     load_refiner_clip_model_weight,
+    # Linear,
+    # Conv2d,
+    load_clip_vision_image,
 )
 from SDXL.tokenizer import (
     CLIPTextTokenizer,
@@ -31,6 +36,7 @@ class GELUActivation(nn.Module):
     def __init__(self, use_gelu_python: bool = False):
         super().__init__()
         # use_gelu_python = True
+        # print("------------ use_gelu_python ", use_gelu_python)
         if use_gelu_python:
             self.act = self._gelu_python
         else:
@@ -41,6 +47,9 @@ class GELUActivation(nn.Module):
 
     def forward(self, input):
         return self.act(input)
+
+    def __repr__(self):
+        return f"GELUActivation({self.act})"
 
 class QuickGELUActivation(nn.Module):
     """
@@ -54,7 +63,7 @@ class QuickGELUActivation(nn.Module):
 
 class CLIPTextEmbeddings(nn.Module):
     def __init__(self, config):
-        super(CLIPTextEmbeddings, self).__init__()
+        super().__init__()
 
         embed_dim = config.hidden_size # 768
         self.token_embedding = nn.Embedding(config.vocab_size, embed_dim) # (49408, 768)
@@ -76,7 +85,7 @@ class CLIPTextEmbeddings(nn.Module):
 
 class CLIPAttention(nn.Module):
     def __init__(self, config):
-        super(CLIPAttention, self).__init__()
+        super().__init__()
         self.embed_dim = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = self.embed_dim // self.num_heads
@@ -87,6 +96,11 @@ class CLIPAttention(nn.Module):
         self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+
+        # self.k_proj = SDXL.util.Linear(self.embed_dim, self.embed_dim)
+        # self.v_proj = SDXL.util.Linear(self.embed_dim, self.embed_dim)
+        # self.q_proj = SDXL.util.Linear(self.embed_dim, self.embed_dim)
+        # self.out_proj = SDXL.util.Linear(self.embed_dim, self.embed_dim)
 
     def _shape(self, tensor, seq_len: int, B: int):
         return tensor.view(B, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -114,7 +128,7 @@ class CLIPAttention(nn.Module):
             attn_weights = attn_weights.view(B * self.num_heads, L, src_len)
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=False) # self.training
+        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training) # self.training
 
         attn_output = torch.bmm(attn_probs, value_states)
         attn_output = attn_output.view(B, self.num_heads, L, self.head_dim)
@@ -126,13 +140,15 @@ class CLIPAttention(nn.Module):
 
 class CLIPMLP(nn.Module):
     def __init__(self, config):
-        super(CLIPMLP, self).__init__()
+        super().__init__()
         if config.hidden_act == "quick_gelu": # SDXLClipL
             self.activation_fn = QuickGELUActivation()
         else:
             self.activation_fn = GELUActivation() # nn.GELU() #  QuickGELUActivation()
         self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
         self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+        # self.fc1 = SDXL.util.Linear(config.hidden_size, config.intermediate_size)
+        # self.fc2 = SDXL.util.Linear(config.intermediate_size, config.hidden_size)
 
     def forward(self, hidden_states: torch.Tensor):
         hidden_states = self.fc1(hidden_states)
@@ -143,14 +159,14 @@ class CLIPMLP(nn.Module):
 
 class CLIPEncoderLayer(nn.Module):
     def __init__(self, config):
-        super(CLIPEncoderLayer, self).__init__()
+        super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = CLIPAttention(config)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = CLIPMLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 
-    def forward(self, hidden_states, causal_attention_mask):
+    def forward(self, hidden_states, causal_attention_mask=None):
         residual = hidden_states
 
         hidden_states = self.layer_norm1(hidden_states)
@@ -165,12 +181,16 @@ class CLIPEncoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
+        # if hidden_states.shape[2] == 1664:
+        #     todos.debug.output_var("CLIPEncoderLayer", hidden_states)
+
         return hidden_states
 
 
 class CLIPEncoder(nn.Module):
     def __init__(self, config):
-        super(CLIPEncoder, self).__init__()
+        super().__init__()
+        self.config = config
         self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(self, inputs_embeds, causal_attention_mask=None):
@@ -203,10 +223,9 @@ def make_causal_mask(x):
 
     return mask[None, None, :, :].expand(B, 1, L, L) # size() -- [1, 1, 77, 77]
 
-# xxxx8888
 class CLIPTextTransformer(nn.Module):
     def __init__(self, config):
-        super(CLIPTextTransformer, self).__init__()
+        super().__init__()
         self.embeddings = CLIPTextEmbeddings(config)
         self.encoder = CLIPEncoder(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -242,7 +261,7 @@ class CLIPTextTransformer(nn.Module):
 
 class CLIPTextModel(nn.Module): 
     def __init__(self, config):
-        super(CLIPTextModel, self).__init__()
+        super().__init__()
         self.text_model = CLIPTextTransformer(config)
 
     def get_input_embeddings(self) -> nn.Module:
@@ -254,7 +273,7 @@ class CLIPTextModel(nn.Module):
 
 class CLIPVisionEmbeddings(nn.Module):
     def __init__(self, config):
-        super(CLIPVisionEmbeddings, self).__init__()
+        super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
         self.image_size = config.image_size
@@ -270,6 +289,14 @@ class CLIPVisionEmbeddings(nn.Module):
             bias=False,
         )
 
+        # self.patch_embedding = SDXL.util.Conv2d(
+        #     in_channels=config.num_channels,
+        #     out_channels=self.embed_dim,
+        #     kernel_size=self.patch_size,
+        #     stride=self.patch_size,
+        #     bias=False,
+        # )
+
         self.num_patches = (self.image_size // self.patch_size) ** 2
         self.num_positions = self.num_patches + 1
         self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
@@ -277,6 +304,7 @@ class CLIPVisionEmbeddings(nn.Module):
 
     def forward(self, pixel_values):
         batch_size = pixel_values.shape[0]
+
         patch_embeds = self.patch_embedding(pixel_values)  # shape = [*, width, grid, grid]
         patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
 
@@ -286,10 +314,9 @@ class CLIPVisionEmbeddings(nn.Module):
         embeddings = embeddings + self.position_embedding(self.position_ids)
         return embeddings
 
-# xxxx8888
 class CLIPVisionTransformer(nn.Module):
     def __init__(self, config):
-        super(CLIPVisionTransformer, self).__init__()
+        super().__init__()
         self.config = config
         embed_dim = config.hidden_size
 
@@ -302,7 +329,7 @@ class CLIPVisionTransformer(nn.Module):
         hidden_states = self.embeddings(pixel_values)
         hidden_states = self.pre_layrnorm(hidden_states)
 
-        encoder_outputs = self.encoder(inputs_embeds=hidden_states, causal_attention_mask=None)
+        encoder_outputs = self.encoder(inputs_embeds=hidden_states)
 
         last_hidden_state = encoder_outputs["last_hidden_state"]
         pooled_output = last_hidden_state[:, 0, :]
@@ -312,7 +339,6 @@ class CLIPVisionTransformer(nn.Module):
             "last_hidden_state": last_hidden_state,
             "pooled_output": pooled_output,
             "hidden_states": encoder_outputs["hidden_states"],
-            # "attentions": encoder_outputs["attentions"],
         }
 
 
@@ -321,7 +347,7 @@ class CLIPVisionEncode(nn.Module):
         CLIPVisionModelWithProjection
     '''
     def __init__(self):
-        super(CLIPVisionEncode, self).__init__()
+        super().__init__()
         # come from comfy/clip_vision_config_g.json
         config = DictToClass(
             {
@@ -343,56 +369,39 @@ class CLIPVisionEncode(nn.Module):
                 "torch_dtype": "float32",
             }
         )
-        # xxxx8888
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
+        # self.visual_projection = SDXL.util.Linear(config.hidden_size, config.projection_dim, bias=False)
+
         self.normal = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
         for param in self.parameters():
             param.requires_grad = False
 
-        # load_model_weight(self, model_path="models/clip_vision_g.safetensors")
+        load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
 
     def get_input_embeddings(self) -> nn.Module:
         return self.vision_model.embeddings.patch_embedding
 
-    def forward(self, pixel_values): # -> Dict[str, torch.Tensor]:
-        pixel_values = F.interpolate(pixel_values, size=(224, 224), mode="bilinear", align_corners=False)
-        # image normal
-        pixel_values = self.normal(pixel_values)
+    def forward(self, pixel_values, normal_input=True): # -> Dict[str, torch.Tensor]:
+        if normal_input:
+            pixel_values = F.interpolate(pixel_values, size=(224, 224), mode="bilinear", align_corners=False)
+            # image normal
+            pixel_values = self.normal(pixel_values)
+            # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
 
         vision_outputs = self.vision_model(pixel_values=pixel_values)
         pooled_output = vision_outputs["pooled_output"]  # pooled_output
         image_embeds = self.visual_projection(pooled_output)
 
-        todos.debug.output_var("pixel_values", pixel_values)
-        todos.debug.output_var("image_embeds", image_embeds)
-
-        # Bad
-        # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467651
-        # tensor [image_embeds] size: [1, 1280], min: -6.218077, max: 4.338432, mean: -0.038565
-
-
-
-        # OK
-        # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
-        # tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
-        pdb.set_trace()
-
-        # return {
-        #     "image_embeds": image_embeds,
-        #     "last_hidden_state": vision_outputs["last_hidden_state"],
-        #     "hidden_states": vision_outputs["hidden_states"],
-        #     "attentions": vision_outputs["attentions"],
-        # }
-        return image_embeds
+        return image_embeds.to(torch.float32)
 
 class SDXLClipL(nn.Module):
     '''SD1ClipModel'''
 
     def __init__(self):
-        super(SDXLClipL, self).__init__()
+        super().__init__()
         # comfy/sd1_clip_config.json
         config = DictToClass(
             {
@@ -411,7 +420,7 @@ class SDXLClipL(nn.Module):
               "intermediate_size": 3072,
               "layer_norm_eps": 1e-05,
               "max_position_embeddings": 77,
-              "model_type": "create_clip_text_model",
+              "model_type": "clip_text_model",
               "num_attention_heads": 12,
               "num_hidden_layers": 12,
               "pad_token_id": 1,
@@ -440,7 +449,7 @@ class SDXLClipL(nn.Module):
 
 class SDXLClipG(nn.Module):
     def __init__(self):
-        super(SDXLClipG, self).__init__()
+        super().__init__()
         # clip_config_bigg.json
         config = DictToClass(
             {
@@ -458,7 +467,7 @@ class SDXLClipG(nn.Module):
               "intermediate_size": 5120,
               "layer_norm_eps": 1e-05,
               "max_position_embeddings": 77,
-              "model_type": "create_clip_text_model",
+              "model_type": "clip_text_model",
               "num_attention_heads": 20,
               "num_hidden_layers": 32,
               "pad_token_id": 1,
@@ -495,7 +504,7 @@ class CLIPTextEncode(nn.Module):
     '''CLIPTextEncode'''
 
     def __init__(self, version):
-        super(CLIPTextEncode, self).__init__()
+        super().__init__()
         self.version = version
 
         if version == "base_1.0":
@@ -535,17 +544,6 @@ class CLIPTextEncode(nn.Module):
             "pooled_output" : g_pooled
         }
 
-
-def clip_vision_model():
-    # output: SdxlClipVision
-
-    '''This model is been used by sdxl 1.0 base model'''
-
-    model = CLIPVisionEncode()
-    model = model.half()
-    model = model.eval()
-    return model   
-
 def create_clip_text_model(version):
     # output: SdxlClipText
     # output: RefinerClipText
@@ -559,6 +557,25 @@ def create_clip_text_model(version):
 def create_clip_token_model(version):
     return CLIPTextTokenizer(version=version)
 
+
+def test_old_clip_vision():
+    from transformers import CLIPVisionModelWithProjection, CLIPVisionConfig
+
+    config = CLIPVisionConfig.from_json_file("../../comfy/clip_vision_config_g.json")
+    model = CLIPVisionModelWithProjection(config)
+    load_model_weight(model, model_path="models/clip_vision_g.safetensors")
+    model.half().eval().cuda()
+
+    return model
+
+def clip_vision_model():
+    # output: SdxlClipVision
+
+    '''This model is been used by sdxl 1.0 base model'''
+
+    model = CLIPVisionEncode()
+    model.half().eval().cuda()
+    return model
 
 if __name__ == "__main__":
     import todos
@@ -605,7 +622,27 @@ if __name__ == "__main__":
     #     # tensor [pooled] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
     #     '''
     # )
-    model = clip_vision_model()
-    load_model_weight(model, model_path="models/clip_vision_g.safetensors")
-    todos.debug.output_weight(model.state_dict())
 
+    model = test_old_clip_vision()
+
+    # todos.debug.output_weight(model.state_dict())
+    image = load_clip_vision_image("../workflow/image.png")
+    todos.debug.output_var("image", image)
+
+    print("Old implement ...")
+    with torch.no_grad():
+        output = model(image.half().cuda(), output_hidden_states=True)
+        # output = model(image, output_hidden_states=True)
+    todos.debug.output_var("output", output)
+
+    print("-" * 120)
+
+    print("New implement ...")
+    model = clip_vision_model()
+    with torch.no_grad():
+        output = model(image.half().cuda(), normal_input=False)
+    todos.debug.output_var("output/image_embeds", output)
+
+    # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
+    # tensor [pooled_output] size: [1, 1664], min: -8.867188, max: 7.449219, mean: 0.144165
+    # tensor [image_embeds] size: [1, 1280], min: -6.214844, max: 4.339844, mean: -0.038574

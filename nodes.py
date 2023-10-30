@@ -795,11 +795,9 @@ class CLIPVisionEncode:
     CATEGORY = "conditioning"
 
     def encode(self, clip_vision, image):
-        todos.debug.output_var("clip_vision: image", image)
         # tensor [clip_vision: image] size: [1, 512, 512, 3], min: 0.0, max: 1.0, mean: 0.323557
 
         output = clip_vision.encode_image(image)
-        todos.debug.output_var("clip_vision: output", output)
         # clip_vision: output is dict:
         #     tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
         #     tensor [last_hidden_state] size: [1, 257, 1664], min: -87.028084, max: 185.91069, mean: -0.343142

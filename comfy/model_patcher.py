@@ -57,6 +57,7 @@ class ModelPatcher:
     #     self.model_options["model_function_wrapper"] = unet_wrapper_function
 
     def set_model_patch(self, patch, name):
+        pdb.set_trace()
         to = self.model_options["transformer_options"]
         if "patches" not in to:
             to["patches"] = {}
@@ -94,6 +95,7 @@ class ModelPatcher:
     def model_patches_to(self, device):
         to = self.model_options["transformer_options"]
         if "patches" in to:
+            pdb.set_trace()
             patches = to["patches"]
             for name in patches:
                 patch_list = patches[name]
@@ -101,6 +103,7 @@ class ModelPatcher:
                     if hasattr(patch_list[i], "to"):
                         patch_list[i] = patch_list[i].to(device)
         if "patches_replace" in to:
+            pdb.set_trace()
             patches = to["patches_replace"]
             for name in patches:
                 patch_list = patches[name]
@@ -121,6 +124,7 @@ class ModelPatcher:
         p = set()
         for k in patches:
             if k in self.model_keys:
+                pdb.set_trace()
                 p.add(k)
                 current_patches = self.patches.get(k, [])
                 current_patches.append((strength_patch, patches[k], strength_model))
@@ -147,6 +151,7 @@ class ModelPatcher:
         if filter_prefix is not None:
             for k in keys:
                 if not k.startswith(filter_prefix):
+                    pdb.set_trace()
                     sd.pop(k)
         return sd
 
@@ -167,6 +172,7 @@ class ModelPatcher:
             else:
                 temp_weight = weight.to(torch.float32, copy=True)
             out_weight = self.calculate_weight(self.patches[key], temp_weight, key).to(weight.dtype)
+            pdb.set_trace()
             comfy.utils.set_attr(self.model, key, out_weight)
             del temp_weight
 

@@ -6,6 +6,8 @@ class Linear(torch.nn.Module):
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
+        self.biasx = bias
+        self.dtype = dtype
         self.in_features = in_features
         self.out_features = out_features
         self.weight = torch.nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
@@ -17,6 +19,10 @@ class Linear(torch.nn.Module):
     def forward(self, input):
         return torch.nn.functional.linear(input, self.weight, self.bias)
 
+    def __repr__(self):
+        return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
+
+
 class Conv2d(torch.nn.Conv2d):
     def reset_parameters(self):
         return None
@@ -27,6 +33,7 @@ def conv_nd(dims, *args, **kwargs):
     else:
         raise ValueError(f"unsupported dimensions: {dims}")
 
+# xxxx_qqqq
 @contextmanager
 def use_comfy_ops(device=None, dtype=None): # Kind of an ugly hack but I can't think of a better way
     old_torch_nn_linear = torch.nn.Linear

@@ -43,6 +43,7 @@ clip_vision = model.clip_vision
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8
 
+
     if seed == -1:
         seed = random.randint(0, 65535)
 
@@ -56,23 +57,15 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         negative_tensor = clip_text(negative_tokens)
         latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
+    positive_tensor['text_encoded'].fill_(0.0)
+    positive_tensor['pooled_output'].fill_(0.0)
+    negative_tensor['text_encoded'].fill_(0.0)
+    negative_tensor['pooled_output'].fill_(0.0)
+    latent_image.fill_(0.0)
 
     with torch.no_grad():
-        clip_embeds = clip_vision(load_torch_image(input_image))
-    # tensor [image] size: [1, 3, 512, 512], min: 0.0, max: 1.0, mean: 0.323557
-    # tensor [clip_embeds] size: [1, 1280], min: -6.218077, max: 4.338432, mean: -0.038565
-
-    todos.debug.output_var("clip_embeds", clip_embeds)
-    # pdb.set_trace()
-
+        clip_embeds = clip_vision(load_torch_image(input_image)) # CLIPVisionEncode
     positive_tensor['pooled_output'] = clip_embeds
-
-    # OK
-    # tensor [clip_vision: image] size: [1, 512, 512, 3], min: 0.0, max: 1.0, mean: 0.323557
-    # tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
-    
-    # ==> xxxx8888 pdb.set_trace()
-
 
     for k, v in positive_tensor.items():
         positive_tensor[k] = v.cuda()
@@ -84,6 +77,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
         latent_output = vae_decode(sample.cpu())
 
+    latent_output = (latent_output + 1.0)/2.0
     x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
 
     return [x_samples[0]]

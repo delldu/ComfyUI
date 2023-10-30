@@ -7,6 +7,7 @@ import contextlib
 import comfy.ops
 import comfy.model_patcher
 import comfy.model_management
+import todos
 import pdb
 
 class ClipVisionModel():
@@ -20,6 +21,7 @@ class ClipVisionModel():
         if comfy.model_management.should_use_fp16(self.load_device, prioritize_performance=False):
             self.dtype = torch.float16
 
+        # offload_device -- (device(type='cpu'),)
         with comfy.ops.use_comfy_ops(offload_device, self.dtype):
             with modeling_utils.no_init_weights():
                 self.model = CLIPVisionModelWithProjection(config)
@@ -37,7 +39,8 @@ class ClipVisionModel():
                                             size=224)
 
     def load_sd(self, sd):
-        return self.model.load_state_dict(sd, strict=False)
+        # return self.model.load_state_dict(sd, strict=False)
+        return self.model.load_state_dict(sd, strict=True)
 
     def encode_image(self, image):
         img = torch.clip((255. * image), 0, 255).round().int()
@@ -52,17 +55,14 @@ class ClipVisionModel():
         else:
             precision_scope = lambda a, b: contextlib.nullcontext(a)
 
+        # from SDXL.util import load_clip_vision_image
+        # pixel_values = load_clip_vision_image("project/workflow/image.png").cuda()
+
         with precision_scope(comfy.model_management.get_autocast_device(self.load_device), torch.float32):
             # self.model -- CLIPVisionModelWithProjection
             outputs = self.model(pixel_values=pixel_values, output_hidden_states=True)
 
-        # outputs -- {
-        #     "image_embeds": image_embeds,
-        #     "last_hidden_state": vision_outputs["last_hidden_state"],
-        #     "hidden_states": vision_outputs["hidden_states"],
-        #     "attentions": vision_outputs["attentions"],
-        # }
-
+        # outputs.keys() -- ['image_embeds', 'last_hidden_state', 'hidden_states']
         for k in outputs:
             t = outputs[k]
             if t is not None:
@@ -94,13 +94,16 @@ def convert_to_transformers(sd, prefix):
         if "{}proj".format(prefix) in sd_k:
             sd['visual_projection.weight'] = sd.pop("{}proj".format(prefix)).transpose(0, 1)
 
+        pdb.set_trace()
         sd = transformers_convert(sd, prefix, "vision_model.", 48)
     return sd
 
 def load_clipvision_from_sd(sd, prefix="", convert_keys=False):
+    # prefix = ''
+    # convert_keys = False
     if convert_keys:
         sd = convert_to_transformers(sd, prefix)
-    if "vision_model.encoder.layers.47.layer_norm1.weight" in sd:
+    if "vision_model.encoder.layers.47.layer_norm1.weight" in sd: # True
         json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_g.json")
     elif "vision_model.encoder.layers.30.layer_norm1.weight" in sd:
         json_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "clip_vision_config_h.json")
@@ -110,17 +113,14 @@ def load_clipvision_from_sd(sd, prefix="", convert_keys=False):
     m, u = clip.load_sd(sd)
     if len(m) > 0:
         print("missing clip vision:", m)
-    u = set(u)
-    keys = list(sd.keys())
-    for k in keys:
-        if k not in u:
-            t = sd.pop(k)
-            del t
+
     return clip
 
 def load(ckpt_path):
+    # ckpt_path -- models/clip_vision/clip_vision_g.safetensors
     sd = load_torch_file(ckpt_path)
-    if "visual.transformer.resblocks.0.attn.in_proj_weight" in sd:
+
+    if "visual.transformer.resblocks.0.attn.in_proj_weight" in sd: # False
         return load_clipvision_from_sd(sd, prefix="visual.", convert_keys=True)
     else:
         return load_clipvision_from_sd(sd)

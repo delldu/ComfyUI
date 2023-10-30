@@ -313,7 +313,13 @@ def sample_dpm_2_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
         # model_forward
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        pdb.set_trace()
+        # model --
+        # KSamplerX0Inpaint(
+        #   (inner_model): CompVisDenoiser(
+        #     (inner_model): CFGNoisePredictor(
+        #       (inner_model): SDXL(..))))
+        # model.forward --  KSamplerX0Inpaint.forward, comfy/samplers.py, line 351
+
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:

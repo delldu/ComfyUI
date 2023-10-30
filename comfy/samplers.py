@@ -27,6 +27,7 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
         #     <bound method BaseModel.apply_model of SDXLRefiner(
         #     (diffusion_model): UNetModel(...))
         # x -- noise_latent_mixer !!!
+        # pdb.set_trace()
 
         def get_area_and_mult(cond, x_in, cond_concat_in, timestep_in):
             area = (x_in.shape[2], x_in.shape[3], 0, 0)
@@ -310,11 +311,6 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
             args = {"cond": cond, "uncond": uncond, "cond_scale": cond_scale, "timestep": timestep}
             return model_options["sampler_cfg_function"](args)
         else:
-            print(f"\n t = {timestep}")
-            todos.debug.output_var("eps1", cond)
-            todos.debug.output_var("eps2", uncond)
-            todos.debug.output_var("eps", uncond + (cond - uncond) * cond_scale)
-
             return uncond + (cond - uncond) * cond_scale
 
 
@@ -723,7 +719,6 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
     # model_options = {'transformer_options': {}}
 
     # tensor [latent_image] size: [1, 4, 75, 57], min: -22.982035, max: 25.116547, mean: -0.20228, vae_encode_output
-    # todos.debug.output_var("noise", noise)
     # tensor [noise] size: [1, 4, 75, 57], min: -3.665161, max: 3.792708, mean: -0.014416, latent_noise
 
     positive = positive[:]

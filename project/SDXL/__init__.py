@@ -146,8 +146,7 @@ def create_sdxl_base_model():
         print(f"CLIPTextEncode load weight leftover keys: ", u)
     model.clip_text = model.clip_text.eval()   
 
-    load_model_weight(model.clip_vision, model_path="models/clip_vision_g.safetensors")
-    model.clip_vision = model.clip_vision.eval()
+    model.clip_vision.eval()
     
     return model
 
