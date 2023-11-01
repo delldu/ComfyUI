@@ -2,11 +2,12 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from SDXL.util import (
-    load_vae_model_weight,
-    load_vaeencode_model_weight,
-    load_vaedecode_model_weight,
-)
+# from SDXL.util import (
+#     # load_vae_model_weight,
+#     # load_vaeencode_model_weight,
+#     # load_vaedecode_model_weight,
+# )
+import todos
 import pdb
 
 # first_stage_model
@@ -106,7 +107,9 @@ class VAEEncode(nn.Module):
         # load_vaeencode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
-        # tensor [x] size: [1, 3, 832, 1256] , min: -1.0 , max: 1.0 mean: 0.5469990968704224
+        x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
+        todos.debug.output_var("VAEEncode input", x)
+
         h = self.encoder(x)
         moments = self.quant_conv(h)
 
@@ -115,6 +118,8 @@ class VAEEncode(nn.Module):
         logvar = torch.clamp(logvar, -30.0, 20.0)
         stdvar = torch.exp(0.5 * logvar)
         output = meanvar + stdvar * torch.randn(meanvar.shape).to(device=x.device)
+
+        todos.debug.output_var("VAEEncode output", output)
 
         return output
 
@@ -141,14 +146,16 @@ class VAEDecode(nn.Module):
 
         # load_vaedecode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
-    def forward(self, x):
-        x = self.encoder(x)
-        return self.decode(x)
-
     def forward(self, z):
+        todos.debug.output_var("VAEDecode input", z)
+
         z = self.post_quant_conv(z)
         dec = self.decoder(z)
-        return dec
+        out = ((dec + 1.0)/2.0).clamp(0.0, 1.0)
+
+        todos.debug.output_var("VAEDecode output", out)
+
+        return out
 
 def nonlinearity(x):
     return x * torch.sigmoid(x)

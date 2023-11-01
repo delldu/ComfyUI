@@ -117,8 +117,6 @@ class CLIP:
         return self.tokenizer.tokenize_with_weights(text, return_word_ids)
 
     def encode_from_tokens(self, tokens, return_pooled=False):
-        # todos.debug.output_var("tokens", tokens)
-
         if self.layer_idx is not None:
             self.cond_stage_model.clip_layer(self.layer_idx)
         else:
@@ -204,6 +202,8 @@ class VAE:
         return samples
 
     def decode(self, samples_in):
+        todos.debug.output_var("VAEDecode input", samples_in)
+
         self.first_stage_model = self.first_stage_model.to(self.device)
         try:
             memory_used = (2562 * samples_in.shape[2] * samples_in.shape[3] * 64) * 1.7
@@ -221,12 +221,17 @@ class VAE:
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 pixel_samples[x:x+batch_number] = torch.clamp(
                     (self.first_stage_model.decode(samples).cpu().float() + 1.0) / 2.0, min=0.0, max=1.0)
+
+
         except model_management.OOM_EXCEPTION as e:
             print("Warning: Ran out of memory when regular VAE decoding, retrying with tiled VAE decoding.")
             pixel_samples = self.decode_tiled_(samples_in)
 
         self.first_stage_model = self.first_stage_model.to(self.offload_device)
         pixel_samples = pixel_samples.cpu().movedim(1,-1)
+
+        todos.debug.output_var("VAEDecode output", pixel_samples)
+
         return pixel_samples
 
     def decode_tiled(self, samples, tile_x=64, tile_y=64, overlap = 16):
@@ -236,6 +241,8 @@ class VAE:
         return output.movedim(1,-1)
 
     def encode(self, pixel_samples):
+        todos.debug.output_var("VAEEncode input", pixel_samples)
+
         self.first_stage_model = self.first_stage_model.to(self.device)
         pixel_samples = pixel_samples.movedim(-1,1)
         try:
@@ -259,6 +266,9 @@ class VAE:
             samples = self.encode_tiled_(pixel_samples)
 
         self.first_stage_model = self.first_stage_model.to(self.offload_device)
+
+        todos.debug.output_var("VAEEncode output", samples)
+
         return samples
 
     def encode_tiled(self, pixel_samples, tile_x=512, tile_y=512, overlap = 64):
@@ -447,8 +457,6 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
         offload_device = model_management.unet_offload_device()
         model = model_config.get_model(sd, "model.diffusion_model.", device=inital_load_device)
         model.load_model_weights(sd, "model.diffusion_model.")
-        # todos.debug.output_weight(model.diffusion_model.state_dict())
-        # pdb.set_trace()
 
     if output_vae:
         vae_sd = comfy.utils.state_dict_prefix_replace(sd, {"first_stage_model.": ""}, filter_keys=True)

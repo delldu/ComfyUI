@@ -780,6 +780,24 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")
 
+    # xxxx8888
+    print("-" * 120)
+    positive_tensor = {}
+    positive_tensor["text_encoded"] = positive[0][0]
+    positive_tensor["pool_encoded"] = positive[0][1]['pooled_output']
+    positive_tensor["adm_encoded"] = positive[0][1]['adm_encoded']
+    todos.debug.output_var("positive_tensor", positive_tensor)
+
+    negative_tensor = {}
+    negative_tensor["text_encoded"] = negative[0][0]
+    negative_tensor["pool_encoded"] = negative[0][1]['pooled_output']
+    negative_tensor["adm_encoded"] = negative[0][1]['adm_encoded']
+    todos.debug.output_var("negative_tensor", negative_tensor)
+
+    todos.debug.output_var("latent_image", latent_image)
+    print("-" * 120)
+
+
     if latent_image is not None:
         latent_image = model.process_latent_in(latent_image)
     # tensor [latent_image] size: [1, 4, 75, 57], min: -2.993397, max: 3.271428, mean: -0.026347, vae_encode_output_scale (0.13025)

@@ -136,26 +136,26 @@ def refiner_clip_state_dict(state_dict):
     return state_dict
 
 
-def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-    state_dict = state_dict_load(model_path)
-    target_state_dict = base_clip_state_dict(state_dict)
-    # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-    m, u = model.load_state_dict(target_state_dict, strict=False)
-    if len(m) > 0:
-        print(f"Load weight from {model_path} missing keys: ", m)
-    if len(u) > 0:
-        print(f"Load weight from {model_path} leftover keys: ", u)        
+# def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
+#     state_dict = state_dict_load(model_path)
+#     target_state_dict = base_clip_state_dict(state_dict)
+#     # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+#     m, u = model.load_state_dict(target_state_dict, strict=False)
+#     if len(m) > 0:
+#         print(f"Load weight from {model_path} missing keys: ", m)
+#     if len(u) > 0:
+#         print(f"Load weight from {model_path} leftover keys: ", u)        
 
 
-def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
-    state_dict = state_dict_load(model_path)
-    state_dict = refiner_clip_state_dict(state_dict)
-    # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-    m, u = model.load_state_dict(target_state_dict, strict=False)
-    if len(m) > 0:
-        print(f"Load weight from {model_path} missing keys: ", m)
-    if len(u) > 0:
-        print(f"Load weight from {model_path} leftover keys: ", u)
+# def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
+#     state_dict = state_dict_load(model_path)
+#     state_dict = refiner_clip_state_dict(state_dict)
+#     # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
+#     m, u = model.load_state_dict(target_state_dict, strict=False)
+#     if len(m) > 0:
+#         print(f"Load weight from {model_path} missing keys: ", m)
+#     if len(u) > 0:
+#         print(f"Load weight from {model_path} leftover keys: ", u)
 
 
 def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):

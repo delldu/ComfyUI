@@ -34,7 +34,8 @@ def update_model_weight(obj, key, value):
 
         setattr(obj, attrs[-1], torch.nn.Parameter(value))
     except:
-        print(f"update model weight {key} exception !!!")
+        # print(f"update model weight {key} exception !!!")
+        # skip output_blocks.*, out.* 
         pass
 
 
@@ -78,6 +79,7 @@ class ControlLoraOps:
             # out_features = 1280
             # bias = True
             # device = None
+            self.biasx = bias
             self.dtype = torch.float16
             self.in_features = in_features
             self.out_features = out_features
@@ -94,6 +96,9 @@ class ControlLoraOps:
                 # F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
             else:
                 return F.linear(input, self.weight.to(input.device), self.bias)
+
+        def __repr__(self):
+            return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
 
     class Conv2d(nn.Module):
         def __init__(
@@ -139,6 +144,7 @@ class ControlLoraOps:
     def conv_nd(self, dims, *args, **kwargs):
         if dims == 2:
             return self.Conv2d(*args, **kwargs)
+            # return nn.Conv2d(*args, **kwargs)
         else:
             raise ValueError(f"unsupported dimensions: {dims}")
 
@@ -247,8 +253,6 @@ class ControlNet(nn.Module):
                     ResBlock(ch, time_embed_dim, dropout,
                         out_channels=mult * model_channels,
                         dims=dims,
-                        # use_checkpoint=False,
-                        # use_scale_shift_norm=False,
                         operations=operations
                     )
                 ]
@@ -387,6 +391,5 @@ if __name__ == "__main__":
     import todos
     model = canny_control_lora()
     # model = torch.jit.script(model)
-    # torch.save(model.state_dict(), "/tmp/controlnet.pth")
-    # print(model)
-    todos.debug.output_weight(model.state_dict())
+    print(model)
+    # todos.debug.output_weight(model.state_dict())

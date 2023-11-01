@@ -108,7 +108,7 @@ def get_model(version):
     return model, device
 
 
-def create_sdxl_base_model():
+def create_sdxl_base_model(skip_loara=True):
     model_version = "base_1.0"
     model_path = "models/sd_xl_base_1.0.safetensors"
     model = DictToClass({
@@ -125,8 +125,11 @@ def create_sdxl_base_model():
     model.sample_mode.diffusion_model.load_state_dict(model_sd)
     model.sample_mode.diffusion_model = model.sample_mode.diffusion_model.eval()
     # load_diffusion_model_weight(model.sample_mode.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")
-    load_ctrl_lora_weights(model.sample_mode.lora_model, model_path="models/control-lora-canny-rank128.safetensors", 
-        unet_weight=model_sd)
+    if skip_loara:
+        pass
+    else:
+        load_ctrl_lora_weights(model.sample_mode.lora_model, model_path="models/control-lora-canny-rank128.safetensors", 
+            unet_weight=model_sd)
 
     model.sample_mode = model.sample_mode.half().eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()

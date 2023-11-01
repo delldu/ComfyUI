@@ -187,12 +187,11 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
                 # tensor [z] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.030258
                 if self.layer_norm_hidden_state: # False
                     z = self.transformer.text_model.final_layer_norm(z)
-                # todos.debug.output_var("SD1ClipModel z", z) # xxxx9999
-                # pdb.set_trace()
 
             pooled_output = outputs.pooler_output
             if self.text_projection is not None: # True
                 pooled_output = pooled_output.float().to(self.text_projection.device) @ self.text_projection.float()
+
         return z.float(), pooled_output.float()
 
     def encode(self, tokens):

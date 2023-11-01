@@ -26,15 +26,6 @@ class CLIPEmbedNoiseAugmentation(ImageConcatWithNoiseAugmentation):
         return x
 
     def forward(self, x, noise_level=None):
-        # todos.debug.output_var("x", x)
-        # todos.debug.output_var("noise_level", noise_level)
-
-        # tensor [x] size: [1280], min: -5.467596, max: 5.339845, mean: -0.032329
-        # tensor [noise_level] size: [1], min: 250.0, max: 250.0 -- 0.25 why ?
-        # tensor [x] size: [1280], min: -5.467596, max: 5.339845, mean: -0.032329
-        # tensor [noise_level] size: [1], min: 749.0, max: 749.0 -- 0.75 why ?
-        # revision ==> pdb.set_trace()
-        
         if noise_level is None:
             noise_level = torch.randint(0, self.max_noise_level, (x.shape[0],), device=x.device).long()
         else:

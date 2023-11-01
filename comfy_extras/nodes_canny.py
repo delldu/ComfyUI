@@ -293,8 +293,8 @@ class Canny:
 
     def detect_edge(self, image, low_threshold, high_threshold):
         # tensor [image] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.396757, input_image
-
         output = canny(image.to(comfy.model_management.get_torch_device()).movedim(-1, 1), low_threshold, high_threshold)
+
         img_out = output[1].cpu().repeat(1, 3, 1, 1).movedim(1, -1)
         # tensor [img_out] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.022768, canny_edge
 

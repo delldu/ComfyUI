@@ -36,8 +36,6 @@ vae_decode = model.vae_decode
 clip_token = model.clip_token
 clip_text = model.clip_text
 
-# todos.debug.output_weight(model.sample_mode.diffusion_model.state_dict())
-# pdb.set_trace()
 
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8
@@ -59,6 +57,10 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         else:
             latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
+    # # xxxx9999
+    todos.debug.output_var("positive_tensor", positive_tensor)
+    todos.debug.output_var("negative_tensor", negative_tensor)
+
     for k, v in positive_tensor.items():
         positive_tensor[k] = v.cuda()
     for k, v in negative_tensor.items():
@@ -68,10 +70,6 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     with torch.no_grad():
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
         latent_output = vae_decode(sample.cpu())
-
-    tensor_min = latent_output.min()
-    tensor_max = latent_output.max()
-    latent_output = (latent_output - tensor_min)/(tensor_max - tensor_min + 1e-5)
 
     x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
 

@@ -24,10 +24,12 @@ class SDXLRefiner(KSampler):
 
     def encode_adm(self, cond, H, W, positive=True):
         pooled = cond['pool_encoded']
+        todos.debug.output_var("SDXLRefiner clip_pooled", pooled)
 
         crop_h = 0
         crop_w = 0
         aesthetic_score = 6.0 if positive else 2.5
+
 
         out = []
         out.append(self.embedder(torch.Tensor([H * 8]))) # H * 8 -- 600
@@ -70,6 +72,7 @@ class SDXLBase(KSampler):
             pooled = self.unclip_adm(cond['clip_embeds'])[:,:1280]
         else:
             pooled = cond['pool_encoded']
+        todos.debug.output_var("SDXLBase clip_pooled", pooled)
 
         crop_w = 0
         crop_h = 0

@@ -33,7 +33,6 @@ def conv_nd(dims, *args, **kwargs):
     else:
         raise ValueError(f"unsupported dimensions: {dims}")
 
-# xxxx_qqqq
 @contextmanager
 def use_comfy_ops(device=None, dtype=None): # Kind of an ugly hack but I can't think of a better way
     old_torch_nn_linear = torch.nn.Linear

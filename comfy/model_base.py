@@ -51,29 +51,6 @@ class BaseModel(torch.nn.Module):
         self.register_buffer('alphas_cumprod_prev', torch.tensor(alphas_cumprod_prev, dtype=torch.float32))
 
     def apply_model(self, x, t, c_concat=None, c_crossattn=None, c_adm=None, control=None, transformer_options={}):
-        # x -- noise_latent_mixer
-
-        # for refine model
-        # tensor [x] size: [2, 4, 75, 57], min: -3.019421, max: 3.357514, mean: -0.024709 ????
-        # 
-        # tensor [t] size: [2], min: 797.0, max: 797.0
-        # [c_concat] value: None
-        # tensor [c_crossattn] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.032304, positive_tensor ???
-        # tensor [c_adm] size: [2, 2560], min: -3.958434, max: 3.409507, mean: 0.195633
-        # [control] value: None
-        # transformer_options is dict:
-        #     list [cond_or_uncond] len: 2
-        #     [item] value: '1'
-        #     [item] value: '0'
-        # self.latent_format.scale_factor -- 0.13025
-
-        # for ClipVision
-        # tensor [x] size: [4, 4, 128, 128], min: -2.754989, max: 2.891286, mean: -0.027223
-        # tensor [t] size: [4], min: 0.0, max: 0.0
-        # tensor [c_crossattn] size: [4, 77, 2048], min: 0.0, max: 0.0, mean: 0.0
-        # tensor [c_adm] size: [4, 2816], min: -0.999965, max: 1.0, mean: 0.154741
-        # [control] value: None
-
         if c_concat is not None:
             pdb.set_trace()
             xc = torch.cat([x] + [c_concat], dim=1)
@@ -91,15 +68,6 @@ class BaseModel(torch.nn.Module):
         # model_forward
         #    self.diffusion_model -- UNetModel.forward(...)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        # xxxx_refiner_0000 4
-        # print("----------------- diffusion_model forward -----------------")
-        # print("input ----")
-        # todos.debug.output_var("x", x)
-        # todos.debug.output_var("t", t)
-        # todos.debug.output_var("context", context)
-        # todos.debug.output_var("c_adm", c_adm)
-        # todos.debug.output_var("control", control)
-        # todos.debug.output_var("transformer_options", transformer_options)
         transformer_options = {}
         output = self.diffusion_model(xc, t, context=context, y=c_adm, control=control, transformer_options=transformer_options).float()
 
@@ -110,9 +78,6 @@ class BaseModel(torch.nn.Module):
 
     def is_adm(self):
         return self.adm_channels > 0
-
-    # def encode_adm(self, **kwargs):
-    #     return None
 
     def load_model_weights(self, sd, unet_prefix=""):
         to_load = {}
@@ -160,25 +125,6 @@ class BaseModel(torch.nn.Module):
 def unclip_adm(unclip_conditioning, device, noise_augmentor, noise_augment_merge=0.0):
     # adm_inputs = []
     # noise_aug = []
-
-    # for clip_vision
-    # unclip_conditioning[0] is dict:
-    #     [clip_vision_output] value: CLIPVisionModelOutput(image_embeds=tensor([[-0.533872,  3.333803, -0.678505,  ..., -2.421016, -2.733607,
-    #           0.656875]]), last_hidden_state=tensor([[[-4.073564, -3.401794, -2.535931,  ..., -1.039717,  1.915481,
-    #           -0.377894],
-    #          [-2.325997, -0.086512,  0.133103,  ..., -1.644961,  2.748995,
-    #            1.686785],
-    #          [-3.587685,  0.271179, -1.310802,  ..., -0.516954,  3.512373,
-    #            1.208619],
-    #          ...,
-    #          [-0.252852, -0.335301, -2.916028,  ..., -0.006915,  0.656954,
-    #            3.088984],
-    #          [ 0.113947, -5.641780, -0.418418,  ...,  0.432994,  0.152186,
-    #           -0.313257],
-    #          [-0.903907,  2.624458, -1.297092,  ...,  4.153544, -0.063884,
-    #            1.956106]]]), hidden_states=None, attentions=None)
-    #     [strength] value: 1.0
-    #     [noise_augmentation] value: 0.0
 
     for unclip_cond in unclip_conditioning:
         for adm_cond in unclip_cond["clip_vision_output"].image_embeds:
@@ -237,12 +183,9 @@ class SDXLRefiner(BaseModel):
         # self.noise_augmentor = CLIPEmbedNoiseAugmentation(**{"noise_schedule_config": {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2"}, "timestep_dim": 1280})
 
     def encode_adm(self, **kwargs):
-        # for refine model
-        # kwargs.keys() -- ['device', 'pooled_output', 'width', 'height', 'prompt_type']
-        # kwargs -- {'device': device(type='cuda', index=0), 'pooled_output': tensor([[-0.087919, -1.548311, -0.571016,  ...,  0.208579, -2.006104,
-        #  -0.290721]]), 'width': 456, 'height': 600, 'prompt_type': 'positive'}
-
         clip_pooled = kwargs["pooled_output"] # xxxx8888 sdxl_pooled(kwargs, self.noise_augmentor)
+        todos.debug.output_var("SDXLRefiner clip_pooled", clip_pooled)
+        
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
         crop_w = kwargs.get("crop_w", 0)
@@ -273,12 +216,14 @@ class SDXL(BaseModel):
         # {'device': device(type='cuda', index=0), 'pooled_output': tensor([[ 0.5246, -0.2884, -0.2883,  ..., -0.6900,  1.4370, -1.0179]]), 'control': <comfy.controlnet.ControlLora object at 0x7fee48d770a0>, 
         #     'width': 1256, 'height': 832, 'prompt_type': 'positive'}
 
-        # clip_vision postitive ???
+        # clip_vision
         # kwargs.keys() -- ['device', 'pooled_output', 'unclip_conditioning', 'width', 'height', 'prompt_type']
         # width, height -- 1024
         # for negative, tensor [clip_pooled] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
 
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
+        todos.debug.output_var("SDXLBase clip_pooled", clip_pooled)
+        
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
         crop_w = kwargs.get("crop_w", 0)

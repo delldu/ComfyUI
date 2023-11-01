@@ -23,25 +23,6 @@ from SDXL.controlnet import (
 import todos
 import pdb
 
-# class UNetModel(nn.Module):
-#     def __init__(self, version="refiner_1.0"):
-#         super(UNetModel, self).__init__()
-#         self.version = version
-
-#     def forward(self, x, timesteps=None, context=None, y=None, control=None):
-#         # input ----
-#         # tensor [x] size: [2, 4, 75, 57], min: -2.976877, max: 3.222236, mean: -0.02592
-#         # tensor [timesteps] size: [2], min: 0.0, max: 0.0, mean: 0.0
-#         # tensor [context] size: [2, 77, 1280], min: -66.1875, max: 18.375, mean: 0.032318
-#         # tensor [c_adm] size: [2, 2560], min: -3.958984, max: 3.410156, mean: 0.195679
-#         # [control] value: None
-#         # output ----
-#         # tensor [output] size: [2, 4, 75, 57], min: -3.130859, max: 3.892578, mean: -0.005257        
-#         import time
-
-#         time.sleep(1.0)
-#         return x
-
 
 def prepare_noise(latent_image, seed):
     generator = torch.manual_seed(seed)
@@ -87,18 +68,12 @@ class KSampler(nn.Module):
             self.lora_model = ControlNet()
         else:
             self.lora_model = nn.Identity()
-
-        self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
+        self.register_schedule()
 
         for param in self.parameters():
             param.requires_grad = False
 
-    def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
-        # beta_schedule = 'linear'
-        # timesteps = 1000
-        # linear_start = 0.00085
-        # linear_end = 0.012
-
+    def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012):
         betas = make_beta_schedule(timesteps, linear_start=linear_start, linear_end=linear_end)
         # ==> torch.linspace(linear_start ** 0.5, linear_end ** 0.5, n_timestep, dtype=torch.float64) ** 2
         # betas.shape -- (1000,), range: [0.00085, 0.012]
@@ -157,6 +132,7 @@ class KSampler(nn.Module):
             with torch.no_grad():
                 control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
 
+            # xxxx8888
             for i in range(len(control_output)):
                 if i == (len(control_output) - 1):
                     key = 'middle'
@@ -164,30 +140,7 @@ class KSampler(nn.Module):
                 else:
                     key = 'output'
                     index = i
-                x = control_output[i]
-                # if x is not None:
-                #     if self.global_average_pooling:
-                #         x = torch.mean(x, dim=(2, 3), keepdim=True).repeat(1, 1, x.shape[2], x.shape[3])
-
-                #     x *= self.strength
-                #     if x.dtype != output_dtype:
-                #         x = x.to(output_dtype)
-                ctrl2[key].append(x)
-
-        # def forward(self, x, hint, timesteps, context, y=None):
-        #     # tensor [x] size: [2, 4, 104, 157] , min: -5.19921875 , max: 4.296875 mean: 0.018890380859375
-        #     # tensor [hint] size: [1, 3, 832, 1256] , min: 0.0 , max: 1.0 mean: 0.0136260986328125
-        #     # (Pdb) timesteps -- tensor([999, 999], device='cuda:0')
-        #     # tensor [context] size: [2, 77, 2048] , min: -809.5 , max: 853.5 mean: 0.0229949951171875
-        #     # tensor [y] size: [2, 2816] , min: -5.140625 , max: 5.1015625 mean: 0.1651611328125
-
-
-        # do diffusion_model.forward(x, timesteps=None, context=None, y=None, control=None)
-        # with torch.no_grad():
-        #     eps1 = self.diffusion_model(latent_noise * c_in, timesteps=t,
-        #                 context = positive_tensor['text_encoded'], y=positive_tensor['adm_encoded'], control=None)
-        #     eps2 = self.diffusion_model(latent_noise * c_in, timesteps=t,
-        #                 context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
+                ctrl2[key].append(control_output[i])
 
         with torch.no_grad():
             e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=ctrl2)
@@ -211,15 +164,19 @@ class KSampler(nn.Module):
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
         if 'lora_guide' in positive_tensor:
             pass
-            # load canny lora model if needed
-
+            # load canny lora model weight if needed ???
 
         B, C, H, W = latent_image.size()
         positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor, H, W, positive=True)
         negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor, H, W, positive=False)
 
+        # xxxx8888
+        print("-" * 120)
         todos.debug.output_var("positive_tensor", positive_tensor)
         todos.debug.output_var("negative_tensor", negative_tensor)
+        todos.debug.output_var("latent_image", latent_image)
+        print("-" * 120)
+
 
         sigmas = self.set_steps(steps, denoise).to(latent_image.device) # steps, denois ==> sigmas
 
@@ -231,7 +188,6 @@ class KSampler(nn.Module):
 
         latent_image = self.process_latent_in(latent_image)
         latent_noise = latent_image + noise # prepare_noise(latent_image, seed) * sigmas[0]
-        todos.debug.output_var("latent_noise", latent_noise)
 
         # forget:  steps=20, denoise=1.0, seed=-1
         # forward: latent_noise, positive_tensor, negative_tensor, cond_scale
@@ -239,11 +195,10 @@ class KSampler(nn.Module):
         # https://github.com/lllyasviel/Fooocus
         # DPM family seems well-suited for XL, since XL sometimes generates overly smooth texture but DPM family sometimes 
         # generate overly dense detail in texture. Their joint effect looks neutral and appealing to human perception.
-
         # sample_dpm2_ancestral
 
-        sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        # sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
         latent_output = self.process_latent_out(sample) # sample
 
@@ -258,10 +213,6 @@ class KSampler(nn.Module):
 
     def sample_euler_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale): 
         """Ancestral sampling with Euler method steps."""
-
-        print("sample_euler_ancestral cond_scale: ", cond_scale)
-        todos.debug.output_var("sample_euler_ancestral positive_tensor", positive_tensor)
-        todos.debug.output_var("sample_euler_ancestral negative_tensor", negative_tensor)
 
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
@@ -280,39 +231,10 @@ class KSampler(nn.Module):
             if sigmas[i + 1] > 0:
                 latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
 
-        todos.debug.output_var("sample_euler_ancestral latent_noise", latent_noise)
-
-        # Bad ???
-        # sample_euler_ancestral positive_tensor is dict:
-        #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.034937
-        #     tensor [pool_encoded] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
-        #     tensor [adm_encoded] size: [1, 2560], min: -4.360085, max: 4.350136, mean: 0.212669
-        # sample_euler_ancestral negative_tensor is dict:
-        #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.029526
-        #     tensor [pool_encoded] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
-        #     tensor [adm_encoded] size: [1, 2560], min: -3.587068, max: 3.409502, mean: 0.230698
-        # tensor [sample_euler_ancestral latent_noise] size: [1, 4, 75, 57], min: -2.753332, max: 3.654438, mean: 0.038793
-
-
-        # OK
-        # tensor [sample_euler_ancestral extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.034937
-        # sample_euler_ancestral extra_args['cond'][0][1] is dict:
-        #     tensor [pool_encoded] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
-        #     tensor [adm_encoded] size: [1, 2560], min: -4.360083, max: 4.350136, mean: 0.185415
-        # tensor [sample_euler_ancestral extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
-        # sample_euler_ancestral extra_args['uncond'][0][1] is dict:
-        #     tensor [pool_encoded] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
-        #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
-        # tensor [sample_euler_ancestral latent_noise] size: [1, 4, 75, 57], min: -3.047589, max: 3.609657, mean: -0.01201
-
         return latent_noise.to(torch.float32)
 
     def sample_euler(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
         """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
-
-        print("sample_euler cond_scale: ", cond_scale)
-        todos.debug.output_var("sample_euler positive_tensor", positive_tensor)
-        todos.debug.output_var("sample_euler negative_tensor", negative_tensor)
 
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
@@ -329,51 +251,21 @@ class KSampler(nn.Module):
             # Euler method
             latent_noise = latent_noise + d * dt
 
-        todos.debug.output_var("sample_euler latent_noise", latent_noise)
-
-        # Bad
-        # sample_euler positive_tensor is dict:
-        #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.034937
-        #     tensor [pool_encoded] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
-        #     tensor [adm_encoded] size: [1, 2560], min: -4.360085, max: 4.350136, mean: 0.185756
-        # sample_euler negative_tensor is dict:
-        #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.029526
-        #     tensor [pool_encoded] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
-        #     tensor [adm_encoded] size: [1, 2560], min: -3.587068, max: 3.409502, mean: 0.203443
-        # tensor [sample_euler latent_noise] size: [1, 4, 75, 57], min: -2.255018, max: 3.478346, mean: 0.150027
-
-
-        # OK
-        # tensor [sample_euler extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.034937
-        # sample_euler extra_args['cond'][0][1] is dict:
-        #     tensor [pool_encoded] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
-        #     tensor [adm_encoded] size: [1, 2560], min: -4.360083, max: 4.350136, mean: 0.185415
-        # tensor [sample_euler extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
-        # sample_euler extra_args['uncond'][0][1] is dict:
-        #     tensor [pool_encoded] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
-        #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
-        # tensor [sample_euler latent_noise] size: [1, 4, 75, 57], min: -3.116404, max: 3.538792, mean: -0.01038
-
         return latent_noise.to(torch.float32)
 
 
     def encode_adm(self, cond, H, W, positive=True):
+        pass
         return cond
 
 
-def create_ksampler_model(version):
-    model = KSampler(version=version)
+if __name__ == "__main__":
+    model = KSampler(version="refiner_1.0")
     model = model.eval()
     # model = torch.jit.script(model)
     model = model.cuda()
-    return model
 
-def test():
-    # torch.backends.cudnn.enabled = True
-
-    model = create_ksampler_model(version="refiner_1.0")
     # NO load weights, just test process ... !!!!!!!!!!!!!!!!!!!!!!!!
-
     positive_tensor = {
         "text_encoded" : torch.randn(1, 77, 1280).cuda(),
         "pool_encoded" : torch.randn(1, 1280).cuda(),
@@ -394,8 +286,3 @@ def test():
         sample_out = model(positive_tensor, negative_tensor, latent_image, cond_scale, steps, denoise, seed)
 
     todos.debug.output_var("sample_out", sample_out)
-
- 
-
-if __name__ == "__main__":
-    test()

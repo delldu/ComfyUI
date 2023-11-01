@@ -10,8 +10,8 @@ import torchvision.transforms as T
 from SDXL.util import (
     DictToClass,
     load_model_weight,
-    load_base_clip_model_weight,
-    load_refiner_clip_model_weight,
+    # load_base_clip_model_weight,
+    # load_refiner_clip_model_weight,
     # Linear,
     # Conv2d,
     load_clip_vision_image,
@@ -35,8 +35,6 @@ class GELUActivation(nn.Module):
 
     def __init__(self, use_gelu_python: bool = False):
         super().__init__()
-        # use_gelu_python = True
-        # print("------------ use_gelu_python ", use_gelu_python)
         if use_gelu_python:
             self.act = self._gelu_python
         else:
@@ -431,19 +429,14 @@ class SDXLClipL(nn.Module):
         self.layer_idx = 11
         self.transformer = CLIPTextModel(config)
         self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
-        self.logit_scale = nn.Parameter(torch.tensor(4.6055))
-        self.layer_norm_hidden_state = False # True
+        # self.logit_scale = nn.Parameter(torch.tensor(4.6055))
+        self.layer_norm_hidden_state = True
 
     def forward(self, tokens):
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
-        if self.layer_norm_hidden_state: # False
+        if self.layer_norm_hidden_state: # True
             z = self.transformer.text_model.final_layer_norm(z)
-
-        # tensor [SD1ClipModel z] size: [2, 77, 768], min: -809.318359, max: 853.722839, mean: 0.013015
-        # todos.debug.output_var("SDXLClipL z", z) # xxxx9999
-        # pdb.set_trace()
-
 
         pooled = outputs["pool_encoded"].float().to(self.text_projection.device) @ self.text_projection.float()
 
@@ -482,28 +475,15 @@ class SDXLClipG(nn.Module):
         self.layer_idx = -2
         self.transformer = CLIPTextModel(config)
         self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
-        self.logit_scale = nn.Parameter(torch.tensor(4.6055))
-        self.layer_norm_hidden_state = False
+        # self.logit_scale = nn.Parameter(torch.tensor(4.6055))
+        self.layer_norm_hidden_state = True
 
     def forward(self, tokens):
-        # tensor([49406,  3365,   267,  3772,  5994,   267,  1105,   633, 14559, 49407,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-        #             0,     0,     0,     0,     0,     0,     0], device='cuda:0')
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
+
         if self.layer_norm_hidden_state: # False
             z = self.transformer.text_model.final_layer_norm(z)
-
-        # todos.debug.output_var("SDXLClipG z", z) # xxxx9999
-        # # OK tensor [SD1ClipModel z] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.027165
-
-        # pdb.set_trace()
-
         pooled = outputs["pool_encoded"].float().to(self.text_projection.device) @ self.text_projection.float()
 
         return z.float(), pooled.float()
@@ -518,9 +498,12 @@ class CLIPTextEncode(nn.Module):
 
         if version == "base_1.0":
             self.clip_l = SDXLClipL()
+            self.clip_l.layer_norm_hidden_state = False # Base version
+
             self.clip_g = SDXLClipG()
         else: # refiner_1.0
             self.clip_g = SDXLClipG()
+            self.clip_g.layer_norm_hidden_state = False
 
         for param in self.parameters():
             param.requires_grad = False
@@ -538,7 +521,9 @@ class CLIPTextEncode(nn.Module):
             l_out, l_pooled = self.clip_l(torch.LongTensor(token_l).to(device))
             g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
-            # return torch.cat([l_out, g_out], dim=-1), g_pooled
+            todos.debug.output_var("CLIPTextEncode/Base output text_encoded", torch.cat([l_out, g_out], dim=-1))
+            todos.debug.output_var("CLIPTextEncode/Base output pool_encoded",  g_pooled)            
+
             return {
                 "text_encoded" : torch.cat([l_out, g_out], dim=-1), 
                 "pool_encoded" : g_pooled
@@ -548,6 +533,8 @@ class CLIPTextEncode(nn.Module):
         token_g = tokens['g']
         g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
+        todos.debug.output_var("CLIPTextEncode/Refiner output text_encoded", g_out)
+        todos.debug.output_var("CLIPTextEncode/Refiner output pool_encoded", g_pooled)
         return {
             "text_encoded" : g_out, 
             "pool_encoded" : g_pooled
@@ -562,9 +549,6 @@ def create_clip_text_model(version):
     model = model.eval()
     # model = model.cuda()
     return model  
-
-def create_clip_token_model(version):
-    return CLIPTextTokenizer(version=version)
 
 
 def test_old_clip_vision():
@@ -589,49 +573,6 @@ def clip_vision_model():
 if __name__ == "__main__":
     import todos
 
-    # # model_version = "base_1.0"
-    # model_version = "refiner_1.0"
-    # print(f"model version {model_version}")
-
-    # model = create_clip_text_model(version=model_version)
-    # # model = model.cuda()
-
-    # # model = torch.jit.script(model)
-    # # print(model)
-    # # todos.debug.output_weight(model.state_dict())
-
-    # positive_prompt = "bag, clean background, made from cloth"
-    # negative_prompt = "watermark, text"
-
-    # clip_token = CLIPTextTokenizer(version=model_version)
-    # positive_tokens = clip_token.encode(positive_prompt)
-    # print(positive_tokens)
-
-    # with torch.no_grad():
-    #     positive_tensor = model(positive_tokens)
-    # todos.debug.output_var("positive_tensor", positive_tensor)
-    # print(
-    #     '''
-    #     # Standard
-    #     # tensor [cond] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.035082, positive_output_tensor
-    #     # tensor [pooled] size: [1, 1280], min: -3.958434, max: 3.203121, mean: 0.009559
-    #     '''
-    # )
-
-    # negative_tokens = clip_token.encode(negative_prompt)
-    # print(negative_tokens)
-    # with torch.no_grad():
-    #     negative_tensor = model(negative_tokens)
-    # todos.debug.output_var("negative_tensor", negative_tensor)
-
-    # print(
-    #     '''
-    #     # Standard 
-    #     # tensor [cond] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526, negative_output_tensor
-    #     # tensor [pooled] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
-    #     '''
-    # )
-
     model = test_old_clip_vision()
 
     # todos.debug.output_weight(model.state_dict())
@@ -641,7 +582,6 @@ if __name__ == "__main__":
     print("Old implement ...")
     with torch.no_grad():
         output = model(image.half().cuda(), output_hidden_states=True)
-        # output = model(image, output_hidden_states=True)
     todos.debug.output_var("output", output)
 
     print("-" * 120)

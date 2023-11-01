@@ -209,6 +209,9 @@ class ControlLoraOps:
             else:
                 return torch.nn.functional.linear(input, self.weight.to(input.device), self.bias)
 
+        def __repr__(self):
+            return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
+
     class Conv2d(torch.nn.Module):
         def __init__(
             self,

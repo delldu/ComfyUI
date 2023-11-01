@@ -17,13 +17,6 @@ def append_zero(x):
 # KarrasScheduler -- sigma_min, sigma_max ...
 def get_sigmas_karras(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
-    print(f"---------- get_sigmas_karras: n = {n}, sigma_min={sigma_min}(0.0291675), sigma_max={sigma_max}(14.614642), rho={rho}")
-
-    # n = 13
-    # sigma_min = 0.029167532920837402
-    # sigma_max = 14.614642143249512
-    # rho = 7.0
-    # device = 'cpu'
 
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
@@ -141,11 +134,6 @@ class BrownianTreeNoiseSampler:
 def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
     # latent_noise -- noise_latent_mixer
-    todos.debug.output_var("sample_euler extra_args['cond'][0][0]", extra_args['cond'][0][0])
-    todos.debug.output_var("sample_euler extra_args['cond'][0][1]", extra_args['cond'][0][1])
-
-    todos.debug.output_var("sample_euler extra_args['uncond'][0][0]", extra_args['uncond'][0][0])
-    todos.debug.output_var("sample_euler extra_args['uncond'][0][1]", extra_args['uncond'][0][1])
 
     extra_args = {} if extra_args is None else extra_args
     s_in = latent_noise.new_ones([latent_noise.shape[0]])
@@ -178,25 +166,12 @@ def sample_euler(model, latent_noise, sigmas, extra_args=None, callback=None, di
         # Euler method
         latent_noise = latent_noise + d * dt
 
-    todos.debug.output_var("sample_euler latent_noise", latent_noise)
     return latent_noise
 
-# xxxx_refine_0000 3
 @torch.no_grad()
 def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callback=None, disable=None, eta=1., 
     s_noise=1., noise_sampler=None):
     """Ancestral sampling with Euler method steps."""
-
-    # extra_args['cond_scale'] value: 7.5
-    # extra_args['model_options'] is dict:
-    #     [transformer_options] value: {}
-    # extra_args['denoise_mask'] -- None
-
-    todos.debug.output_var("sample_euler_ancestral extra_args['cond'][0][0]", extra_args['cond'][0][0])
-    todos.debug.output_var("sample_euler_ancestral extra_args['cond'][0][1]", extra_args['cond'][0][1])
-
-    todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][0]", extra_args['uncond'][0][0])
-    todos.debug.output_var("sample_euler_ancestral extra_args['uncond'][0][1]", extra_args['uncond'][0][1])
 
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_latent_noise_sampler(latent_noise) if noise_sampler is None else noise_sampler
@@ -212,12 +187,9 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
         #     (inner_model): CFGNoisePredictor(
         #       (inner_model): SDXLRefiner(
         #         (diffusion_model): UNetModel(...)))))
-
-        # extra_args.keys() -- ['cond', 'uncond', 'cond_scale', 'model_options', 'seed', 'denoise_mask']
         # model.forward.__code__ -- samplers.py, line 339, KSamplerX0Inpaint.forward
-        # protype: forward(self, x, sigma, uncond, cond, cond_scale, denoise_mask, cond_concat=None, model_options={}, seed=None)
+
         denoised = model(latent_noise, sigmas[i] * s_in, **extra_args)
-        # tensor [denoised] size: [1, 4, 75, 57], min: -2.845827, max: 3.328772, mean: -0.026764
 
         sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1], eta=eta)
         if callback is not None:
@@ -228,8 +200,6 @@ def sample_euler_ancestral(model, latent_noise, sigmas, extra_args=None, callbac
         latent_noise = latent_noise + d * dt
         if sigmas[i + 1] > 0:
             latent_noise = latent_noise + noise_sampler(sigmas[i], sigmas[i + 1]) * s_noise * sigma_up
-
-    todos.debug.output_var("sample_euler_ancestral latent_noise", latent_noise)
 
     return latent_noise
 
@@ -280,7 +250,6 @@ def sample_dpm_2(model, x, sigmas, extra_args=None, callback=None, disable=None,
         # model_forward
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        pdb.set_trace()
 
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
