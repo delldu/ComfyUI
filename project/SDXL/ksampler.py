@@ -11,14 +11,17 @@ from SDXL.noise import (
     CLIPEmbedNoiseAugmentation,
 )
 
-import todos
-import pdb
-
-
 from SDXL.unet import (
     Timestep,
     UNetModel,
 )
+
+from SDXL.controlnet import (
+    ControlNet,
+)
+
+import todos
+import pdb
 
 # class UNetModel(nn.Module):
 #     def __init__(self, version="refiner_1.0"):
@@ -80,8 +83,10 @@ class KSampler(nn.Module):
 
         self.scale_factor = 0.13025
         self.diffusion_model = UNetModel(version=version)
-        # self.embedder = Timestep(256)
-        # self.noise_augmentor = CLIPEmbedNoiseAugmentation()
+        if version == "base_1.0":
+            self.lora_model = ControlNet()
+        else:
+            self.lora_model = nn.Identity()
 
         self.register_schedule(beta_schedule="linear", timesteps=1000, linear_start=0.00085, linear_end=0.012)
 
@@ -138,7 +143,44 @@ class KSampler(nn.Module):
     def diffusion_predict(self, latent_noise, sigma, positive_tensor, negative_tensor, cond_scale):
         c_out = -sigma
         c_in =  append_dims(self.get_scalings(sigma), latent_noise.ndim)
+
         t = self.sigma_to_t(sigma)
+
+        x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0)
+        t2 = torch.cat((t, t), dim=0)
+        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0)
+        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0)
+        ctrl2 = {'input':[], 'middle':[], 'output': []} # control output list
+
+        if 'lora_guide' in positive_tensor:
+            h2 = positive_tensor['lora_guide']
+            with torch.no_grad():
+                control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
+
+            for i in range(len(control_output)):
+                if i == (len(control_output) - 1):
+                    key = 'middle'
+                    index = 0
+                else:
+                    key = 'output'
+                    index = i
+                x = control_output[i]
+                # if x is not None:
+                #     if self.global_average_pooling:
+                #         x = torch.mean(x, dim=(2, 3), keepdim=True).repeat(1, 1, x.shape[2], x.shape[3])
+
+                #     x *= self.strength
+                #     if x.dtype != output_dtype:
+                #         x = x.to(output_dtype)
+                ctrl2[key].append(x)
+
+        # def forward(self, x, hint, timesteps, context, y=None):
+        #     # tensor [x] size: [2, 4, 104, 157] , min: -5.19921875 , max: 4.296875 mean: 0.018890380859375
+        #     # tensor [hint] size: [1, 3, 832, 1256] , min: 0.0 , max: 1.0 mean: 0.0136260986328125
+        #     # (Pdb) timesteps -- tensor([999, 999], device='cuda:0')
+        #     # tensor [context] size: [2, 77, 2048] , min: -809.5 , max: 853.5 mean: 0.0229949951171875
+        #     # tensor [y] size: [2, 2816] , min: -5.140625 , max: 5.1015625 mean: 0.1651611328125
+
 
         # do diffusion_model.forward(x, timesteps=None, context=None, y=None, control=None)
         # with torch.no_grad():
@@ -147,12 +189,8 @@ class KSampler(nn.Module):
         #     eps2 = self.diffusion_model(latent_noise * c_in, timesteps=t,
         #                 context = negative_tensor['text_encoded'], y=negative_tensor['adm_encoded'], control=None)
 
-        x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0)
-        t2 = torch.cat((t, t), dim=0)
-        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0)
-        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0)
         with torch.no_grad():
-            e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=None)
+            e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=ctrl2)
             eps1 = e2[0:1, :, :, :]
             eps2 = e2[1:2, :, :, :]
 
@@ -171,12 +209,14 @@ class KSampler(nn.Module):
         return sigmas
 
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
-        B, C, H, W = latent_image.size()
-        positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor['pooled_output'], H, W, positive=True)
-        negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor['pooled_output'], H, W, positive=False)
+        if 'lora_guide' in positive_tensor:
+            pass
+            # load canny lora model if needed
 
-        if positive_tensor['text_encoded'].abs().sum().item() < 0.01: # is clip_vision ?
-            positive_tensor['pooled_output'].fill_(0.0)
+
+        B, C, H, W = latent_image.size()
+        positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor, H, W, positive=True)
+        negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor, H, W, positive=False)
 
         todos.debug.output_var("positive_tensor", positive_tensor)
         todos.debug.output_var("negative_tensor", negative_tensor)
@@ -245,11 +285,11 @@ class KSampler(nn.Module):
         # Bad ???
         # sample_euler_ancestral positive_tensor is dict:
         #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.034937
-        #     tensor [pooled_output] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
+        #     tensor [pool_encoded] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
         #     tensor [adm_encoded] size: [1, 2560], min: -4.360085, max: 4.350136, mean: 0.212669
         # sample_euler_ancestral negative_tensor is dict:
         #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.029526
-        #     tensor [pooled_output] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
+        #     tensor [pool_encoded] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
         #     tensor [adm_encoded] size: [1, 2560], min: -3.587068, max: 3.409502, mean: 0.230698
         # tensor [sample_euler_ancestral latent_noise] size: [1, 4, 75, 57], min: -2.753332, max: 3.654438, mean: 0.038793
 
@@ -257,11 +297,11 @@ class KSampler(nn.Module):
         # OK
         # tensor [sample_euler_ancestral extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.034937
         # sample_euler_ancestral extra_args['cond'][0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
+        #     tensor [pool_encoded] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
         #     tensor [adm_encoded] size: [1, 2560], min: -4.360083, max: 4.350136, mean: 0.185415
         # tensor [sample_euler_ancestral extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
         # sample_euler_ancestral extra_args['uncond'][0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
+        #     tensor [pool_encoded] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
         #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
         # tensor [sample_euler_ancestral latent_noise] size: [1, 4, 75, 57], min: -3.047589, max: 3.609657, mean: -0.01201
 
@@ -294,11 +334,11 @@ class KSampler(nn.Module):
         # Bad
         # sample_euler positive_tensor is dict:
         #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.034937
-        #     tensor [pooled_output] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
+        #     tensor [pool_encoded] size: [1, 1280], min: -4.360085, max: 4.350136, mean: 0.004742
         #     tensor [adm_encoded] size: [1, 2560], min: -4.360085, max: 4.350136, mean: 0.185756
         # sample_euler negative_tensor is dict:
         #     tensor [text_encoded] size: [1, 77, 1280], min: -66.179535, max: 18.368391, mean: 0.029526
-        #     tensor [pooled_output] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
+        #     tensor [pool_encoded] size: [1, 1280], min: -3.587068, max: 3.409502, mean: 0.024002
         #     tensor [adm_encoded] size: [1, 2560], min: -3.587068, max: 3.409502, mean: 0.203443
         # tensor [sample_euler latent_noise] size: [1, 4, 75, 57], min: -2.255018, max: 3.478346, mean: 0.150027
 
@@ -306,32 +346,20 @@ class KSampler(nn.Module):
         # OK
         # tensor [sample_euler extra_args['cond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.034937
         # sample_euler extra_args['cond'][0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
+        #     tensor [pool_encoded] size: [1, 1280], min: -4.360083, max: 4.350136, mean: 0.004742
         #     tensor [adm_encoded] size: [1, 2560], min: -4.360083, max: 4.350136, mean: 0.185415
         # tensor [sample_euler extra_args['uncond'][0][0]] size: [1, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.029526
         # sample_euler extra_args['uncond'][0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
+        #     tensor [pool_encoded] size: [1, 1280], min: -3.58707, max: 3.409507, mean: 0.024002
         #     tensor [adm_encoded] size: [1, 2560], min: -3.58707, max: 3.409507, mean: 0.203443
         # tensor [sample_euler latent_noise] size: [1, 4, 75, 57], min: -3.116404, max: 3.538792, mean: -0.01038
 
         return latent_noise.to(torch.float32)
 
 
-    def encode_adm(self, pooled, B, H, W, positive=True):
-        return pooled
-        # crop_h = 0
-        # crop_w = 0
-        # aesthetic_score = 6.0 if positive else 2.5
+    def encode_adm(self, cond, H, W, positive=True):
+        return cond
 
-        # out = []
-        # out.append(self.embedder(torch.Tensor([H * 8]))) # H * 8 -- 600
-        # out.append(self.embedder(torch.Tensor([W * 8]))) # W * 8 -- 456
-        # out.append(self.embedder(torch.Tensor([crop_h])))
-        # out.append(self.embedder(torch.Tensor([crop_w])))
-        # out.append(self.embedder(torch.Tensor([aesthetic_score])))
-        # flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
-
-        # return torch.cat((pooled, flat.to(pooled.device)), dim=1)
 
 def create_ksampler_model(version):
     model = KSampler(version=version)
@@ -348,12 +376,12 @@ def test():
 
     positive_tensor = {
         "text_encoded" : torch.randn(1, 77, 1280).cuda(),
-        "pooled_output" : torch.randn(1, 1280).cuda(),
+        "pool_encoded" : torch.randn(1, 1280).cuda(),
     }
 
     negative_tensor = {
         "text_encoded" : torch.randn(1, 77, 1280).cuda(),
-        "pooled_output" : torch.randn(1, 1280).cuda(),
+        "pool_encoded" : torch.randn(1, 1280).cuda(),
     }
 
     latent_image = torch.randn(1, 4, 75, 57).cuda()

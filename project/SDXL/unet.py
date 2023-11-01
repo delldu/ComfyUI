@@ -17,7 +17,7 @@ from SDXL.util import (
     zero_module,
     avg_pool_nd,
 )
-
+import todos
 import pdb
 
 
@@ -485,6 +485,12 @@ class UNetModel(nn.Module):
         # context.size() -- [2, 77, 2048]
         # y.size() -- [2, 2816]
         # control.keys() -- dict_keys(['input', 'middle', 'output'])
+        todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
+        todos.debug.output_var("UNetModel timesteps", timesteps)
+        todos.debug.output_var("UNetModel context", context)
+        todos.debug.output_var("UNetModel y", y)
+        todos.debug.output_var("UNetModel control", control)
+
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0

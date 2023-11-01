@@ -24,36 +24,36 @@ class ControlledUnetModel(UNetModel):
 class ControlNet(nn.Module):
     def __init__(
         self,
-        image_size,
-        in_channels,
-        model_channels,
-        hint_channels,
-        num_res_blocks,
-        attention_resolutions,
-        dropout=0,
-        channel_mult=(1, 2, 4, 8),
+        image_size=32,
+        in_channels=4,
+        model_channels=320,
+        hint_channels=3, # like canny edge channel is RGB with black background
+        num_res_blocks=2,
+        attention_resolutions=[2, 4],
+        dropout=0.0,
+        channel_mult=[1, 2, 4],
         conv_resample=True,
         dims=2,
-        num_classes=None,
+        num_classes='sequential',
         use_checkpoint=False,
-        dtype=torch.float32,
+        dtype=torch.float16,
         num_heads=-1,
-        num_head_channels=-1,
+        num_head_channels=64,
         num_heads_upsample=-1,
         use_scale_shift_norm=False,
         resblock_updown=False,
         use_new_attention_order=False,
-        use_spatial_transformer=False,    # custom transformer support
-        transformer_depth=1,              # custom transformer support
-        context_dim=None,                 # custom transformer support
+        use_spatial_transformer=True,    # custom transformer support
+        transformer_depth=[0, 2, 10],              # custom transformer support
+        context_dim=2048,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
-        legacy=True,
+        legacy=False,
         disable_self_attentions=None,
         num_attention_blocks=None,
         disable_middle_self_attn=False,
-        use_linear_in_transformer=False,
-        adm_in_channels=None,
-        transformer_depth_middle=None,
+        use_linear_in_transformer=True,
+        adm_in_channels=2816,
+        transformer_depth_middle=10,
         device=None,
         operations=comfy.ops,
     ):
@@ -83,7 +83,7 @@ class ControlNet(nn.Module):
         self.model_channels = model_channels
         if isinstance(transformer_depth, int):
             transformer_depth = len(channel_mult) * [transformer_depth]
-        if transformer_depth_middle is None:
+        if transformer_depth_middle is None: # False
             transformer_depth_middle =  transformer_depth[-1]
         if isinstance(num_res_blocks, int):
             self.num_res_blocks = len(channel_mult) * [num_res_blocks]
@@ -92,10 +92,10 @@ class ControlNet(nn.Module):
                 raise ValueError("provide num_res_blocks either as an int (globally constant) or "
                                  "as a list/tuple (per-level) with the same length as channel_mult")
             self.num_res_blocks = num_res_blocks
-        if disable_self_attentions is not None:
+        if disable_self_attentions is not None: # False
             # should be a list of booleans, indicating whether to disable self-attention in TransformerBlocks or not
             assert len(disable_self_attentions) == len(channel_mult)
-        if num_attention_blocks is not None:
+        if num_attention_blocks is not None: # False
             assert len(num_attention_blocks) == len(self.num_res_blocks)
             assert all(map(lambda i: self.num_res_blocks[i] >= num_attention_blocks[i], range(len(num_attention_blocks))))
             print(f"Constructor of UNetModel received num_attention_blocks={num_attention_blocks}. "
@@ -167,7 +167,6 @@ class ControlNet(nn.Module):
                     zero_module(operations.conv_nd(dims, 256, model_channels, 3, padding=1))
         )
 
-        self._feature_size = model_channels
         input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
@@ -195,12 +194,12 @@ class ControlNet(nn.Module):
                     if legacy:
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
-                    if exists(disable_self_attentions):
+                    if exists(disable_self_attentions): # False
                         disabled_sa = disable_self_attentions[level]
                     else:
                         disabled_sa = False
 
-                    if not exists(num_attention_blocks) or nr < num_attention_blocks[level]:
+                    if not exists(num_attention_blocks) or nr < num_attention_blocks[level]: # True
                         layers.append(
                             SpatialTransformer(
                                 ch, num_heads, dim_head, depth=transformer_depth[level], context_dim=context_dim,
@@ -210,7 +209,6 @@ class ControlNet(nn.Module):
                         )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self.zero_convs.append(self.make_zero_conv(ch, operations=operations))
-                self._feature_size += ch
                 input_block_chans.append(ch)
             if level != len(channel_mult) - 1:
                 out_ch = ch
@@ -237,7 +235,6 @@ class ControlNet(nn.Module):
                 input_block_chans.append(ch)
                 self.zero_convs.append(self.make_zero_conv(ch, operations=operations))
                 ds *= 2
-                self._feature_size += ch
 
         if num_head_channels == -1:
             dim_head = ch // num_heads
@@ -273,7 +270,6 @@ class ControlNet(nn.Module):
             ),
         )
         self.middle_block_out = self.make_zero_conv(ch, operations=operations)
-        self._feature_size += ch
 
         # canny lora ==> pdb.set_trace()
         # self.model_channels
@@ -282,13 +278,12 @@ class ControlNet(nn.Module):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
 
     def forward(self, x, hint, timesteps, context, y=None, **kwargs):
-        # what's x ???
-        # tensor [x] size: [2, 4, 146, 111], min: -4.152344, max: 4.15625, mean: -0.006306
-        # tensor [hint] size: [1, 3, 1168, 888], min: 0.0, max: 1.0, mean: 0.016251
-        # tensor [timesteps] size: [2], min: 999.0, max: 999.0
-        # tensor [context] size: [2, 77, 2048], min: -809.5, max: 853.5, mean: 0.02327
-        # tensor [y] size: [2, 2816], min: -5.140625, max: 5.101562, mean: 0.157227
         # kwargs --  {}
+        todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+        todos.debug.output_var("ControlNet hint", hint)
+        todos.debug.output_var("ControlNet timesteps", timesteps)
+        todos.debug.output_var("ControlNet context", context)
+        todos.debug.output_var("ControlNet y", y)
 
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
         emb = self.time_embed(t_emb)
@@ -314,6 +309,8 @@ class ControlNet(nn.Module):
 
         h = self.middle_block(h, emb, context)
         outs.append(self.middle_block_out(h, emb, context))
+
+        todos.debug.output_var("ControlNet outs", outs)
 
         return outs
 

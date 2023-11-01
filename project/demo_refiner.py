@@ -43,7 +43,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     # input_image.shape -- (600, 458, 3), dtype=uint8
 
     if seed == -1:
-        seed = random.randint(0, 65535)
+        seed = random.randint(0, 2147483647)
 
     if len(a_prompt) > 0:
         prompt = prompt + "," + a_prompt
@@ -69,7 +69,10 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
         latent_output = vae_decode(sample.cpu())
 
-    latent_output = (latent_output + 1.0)/2.0
+    tensor_min = latent_output.min()
+    tensor_max = latent_output.max()
+    latent_output = (latent_output - tensor_min)/(tensor_max - tensor_min + 1e-5)
+
     x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
 
     return [x_samples[0]]

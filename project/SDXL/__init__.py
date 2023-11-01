@@ -52,6 +52,9 @@ from SDXL.tokenizer import (
     CLIPTextTokenizer,
 )
 
+from SDXL.controlnet import (
+    load_ctrl_lora_weights,
+)
 
 import pdb
 
@@ -121,8 +124,11 @@ def create_sdxl_base_model():
     model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
     model.sample_mode.diffusion_model.load_state_dict(model_sd)
     model.sample_mode.diffusion_model = model.sample_mode.diffusion_model.eval()
-    # load_diffusion_model_weight(model.sample_mode.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")    
-    model.sample_mode = model.sample_mode.eval().cuda()
+    # load_diffusion_model_weight(model.sample_mode.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")
+    load_ctrl_lora_weights(model.sample_mode.lora_model, model_path="models/control-lora-canny-rank128.safetensors", 
+        unet_weight=model_sd)
+
+    model.sample_mode = model.sample_mode.half().eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()
 
     vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
@@ -144,10 +150,10 @@ def create_sdxl_base_model():
         print(f"CLIPTextEncode load weight missing keys: ", m)
     if len(u) > 0:
         print(f"CLIPTextEncode load weight leftover keys: ", u)
-    model.clip_text = model.clip_text.eval()   
+    model.clip_text = model.clip_text.eval()
 
     model.clip_vision.eval()
-    
+
     return model
 
 

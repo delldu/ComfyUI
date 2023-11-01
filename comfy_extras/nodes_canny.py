@@ -4,6 +4,8 @@ import math
 import torch
 import torch.nn.functional as F
 import comfy.model_management
+import todos
+import pdb
 
 def get_canny_nms_kernel(device=None, dtype=None):
     """Utility function that returns 3x3 kernels for the Canny Non-maximal suppression."""
@@ -254,7 +256,7 @@ def canny(
     edges = edges.to(dtype)
 
     # Hysteresis
-    if hysteresis:
+    if hysteresis: # True
         edges_old: Tensor = -torch.ones(edges.shape, device=edges.device, dtype=dtype)
         hysteresis_kernels: Tensor = get_hysteresis_kernel(device, dtype)
 
@@ -290,8 +292,12 @@ class Canny:
     CATEGORY = "image/preprocessors"
 
     def detect_edge(self, image, low_threshold, high_threshold):
+        # tensor [image] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.396757, input_image
+
         output = canny(image.to(comfy.model_management.get_torch_device()).movedim(-1, 1), low_threshold, high_threshold)
         img_out = output[1].cpu().repeat(1, 3, 1, 1).movedim(1, -1)
+        # tensor [img_out] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.022768, canny_edge
+
         return (img_out,)
 
 NODE_CLASS_MAPPINGS = {

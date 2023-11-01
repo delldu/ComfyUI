@@ -85,7 +85,7 @@ class ControlBase:
     def control_merge(self, control_input, control_output, control_prev, output_dtype):
         out = {'input':[], 'middle':[], 'output': []}
 
-        if control_input is not None:
+        if control_input is not None: # False
             for i in range(len(control_input)):
                 key = 'input'
                 x = control_input[i]
@@ -133,6 +133,7 @@ class ControlNet(ControlBase):
         self.control_model = control_model
         self.control_model_wrapped = comfy.model_patcher.ModelPatcher(self.control_model, load_device=comfy.model_management.get_torch_device(), offload_device=comfy.model_management.unet_offload_device())
         self.global_average_pooling = global_average_pooling
+        pdb.set_trace()
 
     def get_control(self, x_noisy, t, cond, batched_number):
         control_prev = None
@@ -141,6 +142,7 @@ class ControlNet(ControlBase):
 
         if self.timestep_range is not None:
             if t[0] > self.timestep_range[0] or t[0] < self.timestep_range[1]:
+                pdb.set_trace()
                 if control_prev is not None:
                     return control_prev
                 else:
@@ -152,9 +154,10 @@ class ControlNet(ControlBase):
                 del self.cond_hint
             self.cond_hint = None
             self.cond_hint = comfy.utils.common_upscale(self.cond_hint_original, x_noisy.shape[3] * 8, x_noisy.shape[2] * 8, 'nearest-exact', "center").to(self.control_model.dtype).to(self.device)
+            # tensor [self.cond_hint] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.022766, canny_edge
+            
         if x_noisy.shape[0] != self.cond_hint.shape[0]:
             self.cond_hint = broadcast_image_to(self.cond_hint, x_noisy.shape[0], batched_number)
-
 
         context = cond['c_crossattn']
         y = cond.get('c_adm', None)
@@ -163,9 +166,16 @@ class ControlNet(ControlBase):
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # model_forward
-        #    self.control_model -- ControlNet.forward(...)
+        #    self.control_model -- ControlNet.forward(...), comfy/cldm/cldm.py -- 280
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # xxxx_canny
+        # self.control_model.dtype -- torch.float16
+        # x_noisy.size() -- [2, 4, 128, 128]
+        # context.size() -- [2, 77, 2048]
+        # y.size() -- [2, 2816]
+        # control_prev -- None
+        # output_dtype -- torch.float32
+
         control = self.control_model(x=x_noisy.to(self.control_model.dtype), hint=self.cond_hint, timesteps=t, 
             context=context.to(self.control_model.dtype), y=y)
         return self.control_merge(None, control, control_prev, output_dtype)
@@ -296,201 +306,203 @@ class ControlLora(ControlNet):
 
 def load_controlnet(ckpt_path, model=None):
     controlnet_data = comfy.utils.load_torch_file(ckpt_path, safe_load=True)
-    if "lora_controlnet" in controlnet_data:
+    # ckpt_path -- models/controlnet/control-lora-canny-rank128.safetensors
+    if "lora_controlnet" in controlnet_data: # True
         return ControlLora(controlnet_data)
 
-    controlnet_config = None
-    if "controlnet_cond_embedding.conv_in.weight" in controlnet_data: #diffusers format
-        unet_dtype = comfy.model_management.unet_dtype()
-        controlnet_config = comfy.model_detection.unet_config_from_diffusers_unet(controlnet_data, unet_dtype)
-        diffusers_keys = comfy.utils.unet_to_diffusers(controlnet_config)
-        diffusers_keys["controlnet_mid_block.weight"] = "middle_block_out.0.weight"
-        diffusers_keys["controlnet_mid_block.bias"] = "middle_block_out.0.bias"
+    return None
+    # controlnet_config = None
+    # if "controlnet_cond_embedding.conv_in.weight" in controlnet_data: #diffusers format
+    #     unet_dtype = comfy.model_management.unet_dtype()
+    #     controlnet_config = comfy.model_detection.unet_config_from_diffusers_unet(controlnet_data, unet_dtype)
+    #     diffusers_keys = comfy.utils.unet_to_diffusers(controlnet_config)
+    #     diffusers_keys["controlnet_mid_block.weight"] = "middle_block_out.0.weight"
+    #     diffusers_keys["controlnet_mid_block.bias"] = "middle_block_out.0.bias"
 
-        count = 0
-        loop = True
-        while loop:
-            suffix = [".weight", ".bias"]
-            for s in suffix:
-                k_in = "controlnet_down_blocks.{}{}".format(count, s)
-                k_out = "zero_convs.{}.0{}".format(count, s)
-                if k_in not in controlnet_data:
-                    loop = False
-                    break
-                diffusers_keys[k_in] = k_out
-            count += 1
+    #     count = 0
+    #     loop = True
+    #     while loop:
+    #         suffix = [".weight", ".bias"]
+    #         for s in suffix:
+    #             k_in = "controlnet_down_blocks.{}{}".format(count, s)
+    #             k_out = "zero_convs.{}.0{}".format(count, s)
+    #             if k_in not in controlnet_data:
+    #                 loop = False
+    #                 break
+    #             diffusers_keys[k_in] = k_out
+    #         count += 1
 
-        count = 0
-        loop = True
-        while loop:
-            suffix = [".weight", ".bias"]
-            for s in suffix:
-                if count == 0:
-                    k_in = "controlnet_cond_embedding.conv_in{}".format(s)
-                else:
-                    k_in = "controlnet_cond_embedding.blocks.{}{}".format(count - 1, s)
-                k_out = "input_hint_block.{}{}".format(count * 2, s)
-                if k_in not in controlnet_data:
-                    k_in = "controlnet_cond_embedding.conv_out{}".format(s)
-                    loop = False
-                diffusers_keys[k_in] = k_out
-            count += 1
+    #     count = 0
+    #     loop = True
+    #     while loop:
+    #         suffix = [".weight", ".bias"]
+    #         for s in suffix:
+    #             if count == 0:
+    #                 k_in = "controlnet_cond_embedding.conv_in{}".format(s)
+    #             else:
+    #                 k_in = "controlnet_cond_embedding.blocks.{}{}".format(count - 1, s)
+    #             k_out = "input_hint_block.{}{}".format(count * 2, s)
+    #             if k_in not in controlnet_data:
+    #                 k_in = "controlnet_cond_embedding.conv_out{}".format(s)
+    #                 loop = False
+    #             diffusers_keys[k_in] = k_out
+    #         count += 1
 
-        new_sd = {}
-        for k in diffusers_keys:
-            if k in controlnet_data:
-                new_sd[diffusers_keys[k]] = controlnet_data.pop(k)
+    #     new_sd = {}
+    #     for k in diffusers_keys:
+    #         if k in controlnet_data:
+    #             new_sd[diffusers_keys[k]] = controlnet_data.pop(k)
 
-        leftover_keys = controlnet_data.keys()
-        if len(leftover_keys) > 0:
-            print("leftover keys:", leftover_keys)
-        controlnet_data = new_sd
+    #     leftover_keys = controlnet_data.keys()
+    #     if len(leftover_keys) > 0:
+    #         print("leftover keys:", leftover_keys)
+    #     controlnet_data = new_sd
 
-    pth_key = 'control_model.zero_convs.0.0.weight'
-    pth = False
-    key = 'zero_convs.0.0.weight'
-    if pth_key in controlnet_data:
-        pth = True
-        key = pth_key
-        prefix = "control_model."
-    elif key in controlnet_data:
-        prefix = ""
-    else:
-        net = load_t2i_adapter(controlnet_data)
-        if net is None:
-            print("error checkpoint does not contain controlnet or t2i adapter data", ckpt_path)
-        return net
+    # pth_key = 'control_model.zero_convs.0.0.weight'
+    # pth = False
+    # key = 'zero_convs.0.0.weight'
+    # if pth_key in controlnet_data:
+    #     pth = True
+    #     key = pth_key
+    #     prefix = "control_model."
+    # elif key in controlnet_data:
+    #     prefix = ""
+    # else:
+    #     net = load_t2i_adapter(controlnet_data)
+    #     if net is None:
+    #         print("error checkpoint does not contain controlnet or t2i adapter data", ckpt_path)
+    #     return net
 
-    if controlnet_config is None:
-        unet_dtype = comfy.model_management.unet_dtype()
-        controlnet_config = comfy.model_detection.model_config_from_unet(controlnet_data, prefix, unet_dtype, True).unet_config
-    controlnet_config.pop("out_channels")
-    controlnet_config["hint_channels"] = controlnet_data["{}input_hint_block.0.weight".format(prefix)].shape[1]
-    control_model = comfy.cldm.cldm.ControlNet(**controlnet_config)
+    # if controlnet_config is None:
+    #     unet_dtype = comfy.model_management.unet_dtype()
+    #     controlnet_config = comfy.model_detection.model_config_from_unet(controlnet_data, prefix, unet_dtype, True).unet_config
+    # controlnet_config.pop("out_channels")
+    # controlnet_config["hint_channels"] = controlnet_data["{}input_hint_block.0.weight".format(prefix)].shape[1]
+    # control_model = comfy.cldm.cldm.ControlNet(**controlnet_config)
 
-    if pth:
-        if 'difference' in controlnet_data:
-            if model is not None:
-                comfy.model_management.load_models_gpu([model])
-                model_sd = model.model_state_dict()
-                for x in controlnet_data:
-                    c_m = "control_model."
-                    if x.startswith(c_m):
-                        sd_key = "diffusion_model.{}".format(x[len(c_m):])
-                        if sd_key in model_sd:
-                            cd = controlnet_data[x]
-                            cd += model_sd[sd_key].type(cd.dtype).to(cd.device)
-            else:
-                print("WARNING: Loaded a diff controlnet without a model. It will very likely not work.")
+    # if pth:
+    #     if 'difference' in controlnet_data:
+    #         if model is not None:
+    #             comfy.model_management.load_models_gpu([model])
+    #             model_sd = model.model_state_dict()
+    #             for x in controlnet_data:
+    #                 c_m = "control_model."
+    #                 if x.startswith(c_m):
+    #                     sd_key = "diffusion_model.{}".format(x[len(c_m):])
+    #                     if sd_key in model_sd:
+    #                         cd = controlnet_data[x]
+    #                         cd += model_sd[sd_key].type(cd.dtype).to(cd.device)
+    #         else:
+    #             print("WARNING: Loaded a diff controlnet without a model. It will very likely not work.")
 
-        class WeightsLoader(torch.nn.Module):
-            pass
-        w = WeightsLoader()
-        w.control_model = control_model
-        missing, unexpected = w.load_state_dict(controlnet_data, strict=False)
-    else:
-        missing, unexpected = control_model.load_state_dict(controlnet_data, strict=False)
-    print(missing, unexpected)
+    #     class WeightsLoader(torch.nn.Module):
+    #         pass
+    #     w = WeightsLoader()
+    #     w.control_model = control_model
+    #     missing, unexpected = w.load_state_dict(controlnet_data, strict=False)
+    # else:
+    #     missing, unexpected = control_model.load_state_dict(controlnet_data, strict=False)
+    # print(missing, unexpected)
 
-    control_model = control_model.to(unet_dtype)
+    # control_model = control_model.to(unet_dtype)
 
-    global_average_pooling = False
-    filename = os.path.splitext(ckpt_path)[0]
-    if filename.endswith("_shuffle") or filename.endswith("_shuffle_fp16"): #TODO: smarter way of enabling global_average_pooling
-        global_average_pooling = True
+    # global_average_pooling = False
+    # filename = os.path.splitext(ckpt_path)[0]
+    # if filename.endswith("_shuffle") or filename.endswith("_shuffle_fp16"): #TODO: smarter way of enabling global_average_pooling
+    #     global_average_pooling = True
 
-    control = ControlNet(control_model, global_average_pooling=global_average_pooling)
-    return control
+    # control = ControlNet(control_model, global_average_pooling=global_average_pooling)
+    # return control
 
-class T2IAdapter(ControlBase):
-    def __init__(self, t2i_model, channels_in, device=None):
-        super().__init__(device)
-        self.t2i_model = t2i_model
-        self.channels_in = channels_in
-        self.control_input = None
+# class T2IAdapter(ControlBase):
+#     def __init__(self, t2i_model, channels_in, device=None):
+#         super().__init__(device)
+#         self.t2i_model = t2i_model
+#         self.channels_in = channels_in
+#         self.control_input = None
 
-    def scale_image_to(self, width, height):
-        unshuffle_amount = self.t2i_model.unshuffle_amount
-        width = math.ceil(width / unshuffle_amount) * unshuffle_amount
-        height = math.ceil(height / unshuffle_amount) * unshuffle_amount
-        return width, height
+#     def scale_image_to(self, width, height):
+#         unshuffle_amount = self.t2i_model.unshuffle_amount
+#         width = math.ceil(width / unshuffle_amount) * unshuffle_amount
+#         height = math.ceil(height / unshuffle_amount) * unshuffle_amount
+#         return width, height
 
-    def get_control(self, x_noisy, t, cond, batched_number):
-        control_prev = None
-        if self.previous_controlnet is not None:
-            control_prev = self.previous_controlnet.get_control(x_noisy, t, cond, batched_number)
+#     def get_control(self, x_noisy, t, cond, batched_number):
+#         control_prev = None
+#         if self.previous_controlnet is not None:
+#             control_prev = self.previous_controlnet.get_control(x_noisy, t, cond, batched_number)
 
-        if self.timestep_range is not None:
-            if t[0] > self.timestep_range[0] or t[0] < self.timestep_range[1]:
-                if control_prev is not None:
-                    return control_prev
-                else:
-                    return {}
+#         if self.timestep_range is not None:
+#             if t[0] > self.timestep_range[0] or t[0] < self.timestep_range[1]:
+#                 if control_prev is not None:
+#                     return control_prev
+#                 else:
+#                     return {}
 
-        if self.cond_hint is None or x_noisy.shape[2] * 8 != self.cond_hint.shape[2] or x_noisy.shape[3] * 8 != self.cond_hint.shape[3]:
-            if self.cond_hint is not None:
-                del self.cond_hint
-            self.control_input = None
-            self.cond_hint = None
-            width, height = self.scale_image_to(x_noisy.shape[3] * 8, x_noisy.shape[2] * 8)
-            self.cond_hint = comfy.utils.common_upscale(self.cond_hint_original, width, height, 'nearest-exact', "center").float().to(self.device)
-            if self.channels_in == 1 and self.cond_hint.shape[1] > 1:
-                self.cond_hint = torch.mean(self.cond_hint, 1, keepdim=True)
-        if x_noisy.shape[0] != self.cond_hint.shape[0]:
-            self.cond_hint = broadcast_image_to(self.cond_hint, x_noisy.shape[0], batched_number)
-        if self.control_input is None:
-            self.t2i_model.to(x_noisy.dtype)
-            self.t2i_model.to(self.device)
-            self.control_input = self.t2i_model(self.cond_hint.to(x_noisy.dtype))
-            self.t2i_model.cpu()
+#         if self.cond_hint is None or x_noisy.shape[2] * 8 != self.cond_hint.shape[2] or x_noisy.shape[3] * 8 != self.cond_hint.shape[3]:
+#             if self.cond_hint is not None:
+#                 del self.cond_hint
+#             self.control_input = None
+#             self.cond_hint = None
+#             width, height = self.scale_image_to(x_noisy.shape[3] * 8, x_noisy.shape[2] * 8)
+#             self.cond_hint = comfy.utils.common_upscale(self.cond_hint_original, width, height, 'nearest-exact', "center").float().to(self.device)
+#             if self.channels_in == 1 and self.cond_hint.shape[1] > 1:
+#                 self.cond_hint = torch.mean(self.cond_hint, 1, keepdim=True)
+#         if x_noisy.shape[0] != self.cond_hint.shape[0]:
+#             self.cond_hint = broadcast_image_to(self.cond_hint, x_noisy.shape[0], batched_number)
+#         if self.control_input is None:
+#             self.t2i_model.to(x_noisy.dtype)
+#             self.t2i_model.to(self.device)
+#             self.control_input = self.t2i_model(self.cond_hint.to(x_noisy.dtype))
+#             self.t2i_model.cpu()
 
-        control_input = list(map(lambda a: None if a is None else a.clone(), self.control_input))
-        mid = None
-        if self.t2i_model.xl == True:
-            mid = control_input[-1:]
-            control_input = control_input[:-1]
-        return self.control_merge(control_input, mid, control_prev, x_noisy.dtype)
+#         control_input = list(map(lambda a: None if a is None else a.clone(), self.control_input))
+#         mid = None
+#         if self.t2i_model.xl == True:
+#             mid = control_input[-1:]
+#             control_input = control_input[:-1]
+#         return self.control_merge(control_input, mid, control_prev, x_noisy.dtype)
 
-    def copy(self):
-        c = T2IAdapter(self.t2i_model, self.channels_in)
-        self.copy_to(c)
-        return c
+#     def copy(self):
+#         c = T2IAdapter(self.t2i_model, self.channels_in)
+#         self.copy_to(c)
+#         return c
 
-def load_t2i_adapter(t2i_data):
-    if 'adapter' in t2i_data:
-        t2i_data = t2i_data['adapter']
-    if 'adapter.body.0.resnets.0.block1.weight' in t2i_data: #diffusers format
-        prefix_replace = {}
-        for i in range(4):
-            for j in range(2):
-                prefix_replace["adapter.body.{}.resnets.{}.".format(i, j)] = "body.{}.".format(i * 2 + j)
-            prefix_replace["adapter.body.{}.".format(i, j)] = "body.{}.".format(i * 2)
-        prefix_replace["adapter."] = ""
-        t2i_data = comfy.utils.state_dict_prefix_replace(t2i_data, prefix_replace)
-    keys = t2i_data.keys()
+# def load_t2i_adapter(t2i_data):
+#     if 'adapter' in t2i_data:
+#         t2i_data = t2i_data['adapter']
+#     if 'adapter.body.0.resnets.0.block1.weight' in t2i_data: #diffusers format
+#         prefix_replace = {}
+#         for i in range(4):
+#             for j in range(2):
+#                 prefix_replace["adapter.body.{}.resnets.{}.".format(i, j)] = "body.{}.".format(i * 2 + j)
+#             prefix_replace["adapter.body.{}.".format(i, j)] = "body.{}.".format(i * 2)
+#         prefix_replace["adapter."] = ""
+#         t2i_data = comfy.utils.state_dict_prefix_replace(t2i_data, prefix_replace)
+#     keys = t2i_data.keys()
 
-    if "body.0.in_conv.weight" in keys:
-        cin = t2i_data['body.0.in_conv.weight'].shape[1]
-        model_ad = comfy.t2i_adapter.adapter.Adapter_light(cin=cin, channels=[320, 640, 1280, 1280], nums_rb=4)
-    elif 'conv_in.weight' in keys:
-        cin = t2i_data['conv_in.weight'].shape[1]
-        channel = t2i_data['conv_in.weight'].shape[0]
-        ksize = t2i_data['body.0.block2.weight'].shape[2]
-        use_conv = False
-        down_opts = list(filter(lambda a: a.endswith("down_opt.op.weight"), keys))
-        if len(down_opts) > 0:
-            use_conv = True
-        xl = False
-        if cin == 256 or cin == 768:
-            xl = True
-        model_ad = comfy.t2i_adapter.adapter.Adapter(cin=cin, channels=[channel, channel*2, channel*4, channel*4][:4], nums_rb=2, ksize=ksize, sk=True, use_conv=use_conv, xl=xl)
-    else:
-        return None
-    missing, unexpected = model_ad.load_state_dict(t2i_data)
-    if len(missing) > 0:
-        print("t2i missing", missing)
+#     if "body.0.in_conv.weight" in keys:
+#         cin = t2i_data['body.0.in_conv.weight'].shape[1]
+#         model_ad = comfy.t2i_adapter.adapter.Adapter_light(cin=cin, channels=[320, 640, 1280, 1280], nums_rb=4)
+#     elif 'conv_in.weight' in keys:
+#         cin = t2i_data['conv_in.weight'].shape[1]
+#         channel = t2i_data['conv_in.weight'].shape[0]
+#         ksize = t2i_data['body.0.block2.weight'].shape[2]
+#         use_conv = False
+#         down_opts = list(filter(lambda a: a.endswith("down_opt.op.weight"), keys))
+#         if len(down_opts) > 0:
+#             use_conv = True
+#         xl = False
+#         if cin == 256 or cin == 768:
+#             xl = True
+#         model_ad = comfy.t2i_adapter.adapter.Adapter(cin=cin, channels=[channel, channel*2, channel*4, channel*4][:4], nums_rb=2, ksize=ksize, sk=True, use_conv=use_conv, xl=xl)
+#     else:
+#         return None
+#     missing, unexpected = model_ad.load_state_dict(t2i_data)
+#     if len(missing) > 0:
+#         print("t2i missing", missing)
 
-    if len(unexpected) > 0:
-        print("t2i unexpected", unexpected)
+#     if len(unexpected) > 0:
+#         print("t2i unexpected", unexpected)
 
-    return T2IAdapter(model_ad, model_ad.input_channels)
+#     return T2IAdapter(model_ad, model_ad.input_channels)

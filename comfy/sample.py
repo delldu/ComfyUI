@@ -13,9 +13,10 @@ def prepare_noise(latent_image, seed, noise_inds=None):
     optional arg skip can be used to skip and discard x number of noise generations for a given seed
     """
     generator = torch.manual_seed(seed)
-    if noise_inds is None:
+    if noise_inds is None: # True
         return torch.randn(latent_image.size(), dtype=latent_image.dtype, layout=latent_image.layout, generator=generator, device="cpu")
     
+    pdb.set_trace()
     unique_inds, inverse = np.unique(noise_inds, return_inverse=True)
     noises = []
     for i in range(unique_inds[-1]+1):

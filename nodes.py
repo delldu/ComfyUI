@@ -58,6 +58,21 @@ class CLIPTextEncode:
 
         tokens = clip.tokenize(text)
         cond, pooled = clip.encode_from_tokens(tokens, return_pooled=True)
+        # text -- 'bag for children\n'
+        # tokens['l'] -- [[(49406, 1.0), (3365, 1.0), (556, 1.0), (2153, 1.0), (49407, 1.0)]]
+        # tokens['g'] -- [[(49406, 1.0), (3365, 1.0), (556, 1.0), (2153, 1.0), (49407, 1.0)]]
+        # tensor [cond] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.02496
+        # tensor [pooled] size: [1, 1280], min: -3.32294, max: 5.93469, mean: 0.019366
+
+        # 'black and white\n'
+        # tokens['l'] -- [[(49406, 1.0), (1449, 1.0), (537, 1.0), (1579, 1.0), (49407, 1.0)]]
+        # tokens['g'] -- [[(49406, 1.0), (1449, 1.0), (537, 1.0), (1579, 1.0), (49407, 1.0)]]
+        # tensor [cond] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023284
+        # tensor [pooled] size: [1, 1280], min: -5.141018, max: 5.103264, mean: -9.5e-05
+
+        # todos.debug.output_var("cond", cond)
+        # todos.debug.output_var("pooled", pooled)
+
 
         # text -- 'bag, clean background, made from cloth\n'
         # (Pdb) tokens['l']
@@ -326,6 +341,10 @@ class VAEEncode:
 
         # tensor [pixels] size: [1, 600, 456, 3], min: 0.0, max: 1.0, mean: 0.462529, vae_encode_input
         # tensor [t] size: [1, 4, 75, 57], min: -22.981936, max: 25.116529, mean: -0.20228, vae_encode_output
+
+        # xxxx_canny
+        # tensor [pixels] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.396757
+        # tensor [t] size: [1, 4, 128, 128], min: -21.706661, max: 25.882271, mean: -0.492811, vae_encode_output
 
         return ({"samples":t}, )
 
@@ -697,7 +716,16 @@ class ControlNetApplyAdvanced:
         if strength == 0:
             return (positive, negative)
 
-        control_hint = image.movedim(-1,1)
+        # tensor [positive[0][0]] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.026303
+        # positive[0][1] is dict:
+        #     tensor [pooled_output] size: [1, 1280], min: -4.437859, max: 3.793518, mean: 0.003348
+
+        # tensor [negative[0][0]] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023284
+        # negative[0][1] is dict:
+        #     tensor [pooled_output] size: [1, 1280], min: -5.141018, max: 5.103264, mean: -9.5e-05
+
+        # tensor [image] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.022768, canny_edge
+        control_hint = image.movedim(-1,1) # size() -- [1, 3, 1024, 1024]
         cnets = {}
 
         out = []
@@ -719,6 +747,12 @@ class ControlNetApplyAdvanced:
                 n = [t[0], d]
                 c.append(n)
             out.append(c)
+
+        # c_net.cond_hint_original -- canny_edge
+
+        # (Pdb) out[0][0][1].keys()/out[1][0][1].keys()
+        # -- (['pooled_output', 'control', 'control_apply_to_uncond']
+
         return (out[0], out[1])
 
 

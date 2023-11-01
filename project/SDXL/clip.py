@@ -181,9 +181,6 @@ class CLIPEncoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
-        # if hidden_states.shape[2] == 1664:
-        #     todos.debug.output_var("CLIPEncoderLayer", hidden_states)
-
         return hidden_states
 
 
@@ -248,14 +245,14 @@ class CLIPTextTransformer(nn.Module):
         last_hidden_state = encoder_outputs["last_hidden_state"]
         last_hidden_state = self.final_layer_norm(last_hidden_state)
 
-        pooled_output = last_hidden_state[
+        pool_encoded = last_hidden_state[
             torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device),
             input_tokens.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1),
         ]
 
         return {
             "hidden_states": encoder_outputs["hidden_states"],
-            "pooled_output": pooled_output,
+            "pool_encoded": pool_encoded,
         }
 
 
@@ -332,12 +329,12 @@ class CLIPVisionTransformer(nn.Module):
         encoder_outputs = self.encoder(inputs_embeds=hidden_states)
 
         last_hidden_state = encoder_outputs["last_hidden_state"]
-        pooled_output = last_hidden_state[:, 0, :]
-        pooled_output = self.post_layernorm(pooled_output)
+        pool_encoded = last_hidden_state[:, 0, :]
+        pool_encoded = self.post_layernorm(pool_encoded)
 
         return {
             "last_hidden_state": last_hidden_state,
-            "pooled_output": pooled_output,
+            "pool_encoded": pool_encoded,
             "hidden_states": encoder_outputs["hidden_states"],
         }
 
@@ -392,8 +389,8 @@ class CLIPVisionEncode(nn.Module):
             # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
 
         vision_outputs = self.vision_model(pixel_values=pixel_values)
-        pooled_output = vision_outputs["pooled_output"]  # pooled_output
-        image_embeds = self.visual_projection(pooled_output)
+        pool_encoded = vision_outputs["pool_encoded"]  # pool_encoded
+        image_embeds = self.visual_projection(pool_encoded)
 
         return image_embeds.to(torch.float32)
 
@@ -435,14 +432,20 @@ class SDXLClipL(nn.Module):
         self.transformer = CLIPTextModel(config)
         self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
         self.logit_scale = nn.Parameter(torch.tensor(4.6055))
-        self.layer_norm_hidden_state = True
+        self.layer_norm_hidden_state = False # True
 
     def forward(self, tokens):
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
-        if self.layer_norm_hidden_state: # True
+        if self.layer_norm_hidden_state: # False
             z = self.transformer.text_model.final_layer_norm(z)
-        pooled = outputs["pooled_output"].float().to(self.text_projection.device) @ self.text_projection.float()
+
+        # tensor [SD1ClipModel z] size: [2, 77, 768], min: -809.318359, max: 853.722839, mean: 0.013015
+        # todos.debug.output_var("SDXLClipL z", z) # xxxx9999
+        # pdb.set_trace()
+
+
+        pooled = outputs["pool_encoded"].float().to(self.text_projection.device) @ self.text_projection.float()
 
         return z.float(), pooled.float()
 
@@ -495,7 +498,13 @@ class SDXLClipG(nn.Module):
         z = outputs["hidden_states"][self.layer_idx]
         if self.layer_norm_hidden_state: # False
             z = self.transformer.text_model.final_layer_norm(z)
-        pooled = outputs["pooled_output"].float().to(self.text_projection.device) @ self.text_projection.float()
+
+        # todos.debug.output_var("SDXLClipG z", z) # xxxx9999
+        # # OK tensor [SD1ClipModel z] size: [2, 77, 1280], min: -66.179367, max: 18.368397, mean: 0.027165
+
+        # pdb.set_trace()
+
+        pooled = outputs["pool_encoded"].float().to(self.text_projection.device) @ self.text_projection.float()
 
         return z.float(), pooled.float()
 
@@ -532,7 +541,7 @@ class CLIPTextEncode(nn.Module):
             # return torch.cat([l_out, g_out], dim=-1), g_pooled
             return {
                 "text_encoded" : torch.cat([l_out, g_out], dim=-1), 
-                "pooled_output" : g_pooled
+                "pool_encoded" : g_pooled
             }
 
         # refiner_1.0 version
@@ -541,7 +550,7 @@ class CLIPTextEncode(nn.Module):
 
         return {
             "text_encoded" : g_out, 
-            "pooled_output" : g_pooled
+            "pool_encoded" : g_pooled
         }
 
 def create_clip_text_model(version):
@@ -644,5 +653,5 @@ if __name__ == "__main__":
     todos.debug.output_var("output/image_embeds", output)
 
     # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
-    # tensor [pooled_output] size: [1, 1664], min: -8.867188, max: 7.449219, mean: 0.144165
+    # tensor [pool_encoded] size: [1, 1664], min: -8.867188, max: 7.449219, mean: 0.144165
     # tensor [image_embeds] size: [1, 1280], min: -6.214844, max: 4.339844, mean: -0.038574

@@ -618,7 +618,11 @@ class UNetModel(nn.Module):
     def forward(self, x, timesteps=None, context=None, y=None, control=None, transformer_options={}, **kwargs):
         # x -- noise_latent_mixer
         # kwargs -- {}
-        # todos.debug.output_var("UNetModel.forward.x", x)
+        todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
+        todos.debug.output_var("UNetModel timesteps", timesteps)
+        todos.debug.output_var("UNetModel context", context)
+        todos.debug.output_var("UNetModel y", y)
+        todos.debug.output_var("UNetModel control", control)
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0

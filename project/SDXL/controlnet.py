@@ -38,7 +38,7 @@ def update_model_weight(obj, key, value):
         pass
 
 
-def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors"):
+def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors", unet_weight=None):
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
@@ -48,10 +48,11 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
     if os.path.exists(checkpoint) and os.path.exists(unet_checkpoint):
         print(f"Loading control-lora weight from {unet_checkpoint} and {checkpoint} ...")
 
-        unet_weight = state_dict_load(unet_checkpoint)
-        unet_weight = state_dict_filter(unet_weight, ["model.diffusion_model."], remove_prefix=True)
+        if unet_weight is None:
+            unet_weight = state_dict_load(unet_path)
+            unet_weight = state_dict_filter(unet_weight, ["model.diffusion_model."], remove_prefix=True)
 
-        lora_weight = state_dict_load(checkpoint)
+        lora_weight = state_dict_load(model_path)
 
         for k in unet_weight:
             update_model_weight(model, k, unet_weight[k])
@@ -63,7 +64,7 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
                 pass # skip "lora_controlnet"
     else:
         print("-" * 32, "Warnning", "-" * 32)
-        print(f"model weight file '{checkpoint}'' not exist !!!")
+        print(f"model weight file '{checkpoint}' not exist !!!")
 
 
 
@@ -71,13 +72,13 @@ class ControlLoraOps:
     class Linear(nn.Module):
         def __init__(self, in_features: int, out_features: int, bias: bool = True,
                     device=None, dtype=None) -> None:
-            super(ControlLoraOps, self).__init__()
+            factory_kwargs = {'device': device, 'dtype': dtype}
+            super().__init__()
             # in_features = 320
             # out_features = 1280
             # bias = True
             # device = None
-            # dtype = torch.float16
-
+            self.dtype = torch.float16
             self.in_features = in_features
             self.out_features = out_features
             self.weight = None
@@ -86,8 +87,11 @@ class ControlLoraOps:
             self.bias = None
 
         def forward(self, input):
+            input = input.to(self.dtype)
             if self.up is not None: # False
-                return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
+                return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
+                        self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
+                # F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
             else:
                 return F.linear(input, self.weight.to(input.device), self.bias)
 
@@ -106,7 +110,7 @@ class ControlLoraOps:
             device=None,
             dtype=None
         ):
-            super(Conv2d, self).__init__()
+            super().__init__()
             self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
@@ -125,9 +129,12 @@ class ControlLoraOps:
 
         def forward(self, input):
             if self.up is not None:
-                return F.conv2d(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias, self.stride, self.padding, self.dilation, self.groups)
+                return F.conv2d(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
+                    self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), 
+                    self.bias.to(input.device), self.stride, self.padding, self.dilation, self.groups)
             else:
-                return F.conv2d(input, self.weight.to(input.device), self.bias, self.stride, self.padding, self.dilation, self.groups)
+                return F.conv2d(input, self.weight.to(input.device), self.bias.to(input.device), self.stride, self.padding, 
+                    self.dilation, self.groups)
 
     def conv_nd(self, dims, *args, **kwargs):
         if dims == 2:
@@ -303,11 +310,11 @@ class ControlNet(nn.Module):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
 
     def forward(self, x, hint, timesteps, context, y=None):
-        # tensor [x] size: [2, 4, 104, 157] , min: -5.19921875 , max: 4.296875 mean: 0.018890380859375
-        # tensor [hint] size: [1, 3, 832, 1256] , min: 0.0 , max: 1.0 mean: 0.0136260986328125
-        # (Pdb) timesteps -- tensor([999, 999], device='cuda:0')
-        # tensor [context] size: [2, 77, 2048] , min: -809.5 , max: 853.5 mean: 0.0229949951171875
-        # tensor [y] size: [2, 2816] , min: -5.140625 , max: 5.1015625 mean: 0.1651611328125
+        todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+        todos.debug.output_var("ControlNet hint", hint)
+        todos.debug.output_var("ControlNet timesteps", timesteps)
+        todos.debug.output_var("ControlNet context", context)
+        todos.debug.output_var("ControlNet y", y)
 
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
         emb = self.time_embed(t_emb)
@@ -334,6 +341,8 @@ class ControlNet(nn.Module):
 
         h = self.middle_block(h, emb, context)
         outs.append(self.middle_block_out(h, emb, context))
+
+        todos.debug.output_var("ControlNet outs", outs)
 
         return outs
 

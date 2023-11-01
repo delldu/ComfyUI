@@ -22,7 +22,9 @@ class SDXLRefiner(KSampler):
         super().__init__(version="refiner_1.0")
         self.embedder = Timestep(256)
 
-    def encode_adm(self, pooled, H, W, positive=True):
+    def encode_adm(self, cond, H, W, positive=True):
+        pooled = cond['pool_encoded']
+
         crop_h = 0
         crop_w = 0
         aesthetic_score = 6.0 if positive else 2.5
@@ -63,11 +65,11 @@ class SDXLBase(KSampler):
         return adm_out
 
 
-    def encode_adm(self, pooled, H, W, positive=True):
-        if positive:
-            clip_pooled = self.unclip_adm(pooled)[:,:1280]
+    def encode_adm(self, cond, H, W, positive=True):
+        if positive and 'clip_embeds' in cond: # clip_vision
+            pooled = self.unclip_adm(cond['clip_embeds'])[:,:1280]
         else:
-            clip_pooled = pooled
+            pooled = cond['pool_encoded']
 
         crop_w = 0
         crop_h = 0
@@ -81,5 +83,5 @@ class SDXLBase(KSampler):
         out.append(self.embedder(torch.Tensor([crop_w])))
         out.append(self.embedder(torch.Tensor([target_height])))
         out.append(self.embedder(torch.Tensor([target_width])))
-        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(clip_pooled.shape[0], 1)
-        return torch.cat((clip_pooled.to(flat.device), flat), dim=1).to(pooled.device)
+        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
+        return torch.cat((pooled.to(flat.device), flat), dim=1).to(pooled.device)

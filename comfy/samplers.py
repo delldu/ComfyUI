@@ -27,7 +27,20 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
         #     <bound method BaseModel.apply_model of SDXLRefiner(
         #     (diffusion_model): UNetModel(...))
         # x -- noise_latent_mixer !!!
-        # pdb.set_trace()
+
+        # tensor [t] size: [1, 4, 128, 128], min: -21.706661, max: 25.882271, mean: -0.492811, vae_encode_output
+        # tensor [x] size: [1, 4, 128, 128], min: -4.220057, max: 4.790348, mean: 0.004913, vae_encode_output ???, no, noise_latent_mixer
+
+        # uncond = [[tensor([[[    -3.891709,     -2.511343,      4.716701,  ..., ]]], device='cuda:0'), 
+        #         {'pooled_output': tensor([[ 0.954564,  0.917528, -0.207402,  ..., -0.011250,  0.385467, -0.650592]]),
+        #         'control': <comfy.controlnet.ControlLora object at 0x7f28344d28e0>, 
+        #         'control_apply_to_uncond': False,
+        #         'adm_encoded': tensor([[ 0.954564,  0.917528, -0.207402,  ...,  0.126730,  0.117974, 0.109818]], device='cuda:0')}]]
+        # cond = [[tensor([[[-3.891709, -2.511343,  4.716701,  ...,  0.190406,  0.418031,]]], device='cuda:0'),
+        #          {'pooled_output': tensor([[     0.000909,      1.976756,     -0.275811,  ...,-0.845650,     -1.949289,     -1.019354]]), 
+        #          'control': <comfy.controlnet.ControlLora object at 0x7f28344d28e0>, 
+        #          'control_apply_to_uncond': False,
+        #          'adm_encoded': tensor([[ 0.000909,  1.976756,  -0.275811,  ..., 0.126730,  0.117974, 0.109818]], device='cuda:0')}]]
 
         def get_area_and_mult(cond, x_in, cond_concat_in, timestep_in):
             area = (x_in.shape[2], x_in.shape[3], 0, 0)
@@ -253,7 +266,15 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
                 timestep_ = torch.cat([timestep] * batch_chunks)
 
                 if control is not None:
-                    c['control'] = control.get_control(input_x, timestep_, c, len(cond_or_uncond))
+                    # xxxx_canny
+                    # tensor [x] size: [1, 4, 128, 128], min: -4.220057, max: 4.790348, mean: 0.004913, vae_encode_output ???
+                    # tensor [input_x] size: [2, 4, 128, 128], min: -4.220057, max: 4.790348, mean: 0.004913
+                    # c.keys() -- ['c_crossattn', 'c_adm']
+                    # c['c_crossattn'].size()
+                    # tensor [c['c_crossattn']] size: [2, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.024794
+                    # tensor [c['c_adm']] size: [2, 2816], min: -5.141018, max: 5.103264, mean: 0.155481
+                    c['control'] = control.get_control(input_x, timestep_, c, len(cond_or_uncond)) # len(cond_or_uncond) -- 2
+                    # c['control'].keys() -- ['input', 'middle', 'output']
 
                 transformer_options = {}
                 if 'transformer_options' in model_options:
@@ -279,6 +300,13 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
                     pdb.set_trace()
                     output = model_options['model_function_wrapper'](model_function, {"input": input_x, "timestep": timestep_, "c": c, "cond_or_uncond": cond_or_uncond}).chunk(batch_chunks)
                 else:
+                    # check control['...'] for positive/negative ???
+                    # input_x.size() -- [2, 4, 128, 128]
+                    # c.keys() -- ['c_crossattn', 'c_adm', 'control', 'transformer_options']
+                    # c['c_crossattn'].size() -- [2, 77, 2048]
+                    # c['c_adm'].size() -- [2, 2816]
+                    # pp c['control'].keys() -- ['input', 'middle', 'output']
+                    # c['transformer_options'] -- {'cond_or_uncond': [1, 0]}
                     output = model_function(input_x, timestep_, **c).chunk(batch_chunks)
                 del input_x
 
@@ -330,7 +358,7 @@ class CFGNoisePredictor(torch.nn.Module):
 
     def apply_model(self, x, timestep, cond, uncond, cond_scale, cond_concat=None, model_options={}, seed=None):
         # x -- noise_latent_mixer
-        # tensor [x] size: [1, 4, 75, 57], min: -3.028021, max: 3.486444, mean: -0.026125
+        # tensor [x] size: [1, 4, 75, 57], min: -3.028021, max: 3.486444, mean: -0.026125, noise_latent_mixes
         # tensor [timestep] size: [1], min: 23.0, max: 23.0
 
         out = sampling_function(self.inner_model.apply_model, x, timestep, uncond, cond, cond_scale, cond_concat, 
@@ -536,29 +564,33 @@ def apply_empty_x_to_equal_area(conds, uncond, name, uncond_fill_func):
     for t in range(len(conds)):
         x = conds[t]
         if 'area' not in x[1]:
-            if name in x[1] and x[1][name] is not None:
+            # ==> pdb.set_trace()
+            if name in x[1] and x[1][name] is not None: # False: name -- 'gligen'
                 cond_cnets.append(x[1][name])
             else:
                 cond_other.append((x, t))
     for t in range(len(uncond)):
         x = uncond[t]
         if 'area' not in x[1]:
-            if name in x[1] and x[1][name] is not None:
+            # ==> pdb.set_trace()
+            if name in x[1] and x[1][name] is not None: # True: name -- 'control', False: name -- 'gligen'
                 uncond_cnets.append(x[1][name])
             else:
                 uncond_other.append((x, t))
 
-    if len(uncond_cnets) > 0:
+    if len(uncond_cnets) > 0: # True
         return
 
     for x in range(len(cond_cnets)):
         temp = uncond_other[x % len(uncond_other)]
         o = temp[0]
         if name in o[1] and o[1][name] is not None:
+            pdb.set_trace()
             n = o[1].copy()
             n[name] = uncond_fill_func(cond_cnets, x)
             uncond += [[o[0], n]]
         else:
+            pdb.set_trace()
             n = o[1].copy()
             n[name] = uncond_fill_func(cond_cnets, x)
             uncond[temp[1]] = [o[0], n]
@@ -676,7 +708,7 @@ def ksampler(sampler_name, extra_options={}):
             # sample_euler_ancestral
 
             if latent_image is not None:
-                noise += latent_image
+                noise += latent_image # xxxx_canny
             else:
                 pdb.set_trace()
             # noise_latent_mixer 1 ...
@@ -740,7 +772,8 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
 
     pre_run_control(model_wrap, negative + positive)
 
-    apply_empty_x_to_equal_area(list(filter(lambda c: c[1].get('control_apply_to_uncond', False) == True, positive)), negative, 'control', lambda cond_cnets, x: cond_cnets[x])
+    apply_empty_x_to_equal_area(list(filter(lambda c: c[1].get('control_apply_to_uncond', False) == True, positive)),
+        negative, 'control', lambda cond_cnets, x: cond_cnets[x])
     apply_empty_x_to_equal_area(positive, negative, 'gligen', lambda cond_cnets, x: cond_cnets[x])
 
     if model.is_adm():
