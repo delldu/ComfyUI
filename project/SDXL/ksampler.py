@@ -195,13 +195,17 @@ class KSampler(nn.Module):
         # forget:  steps=20, denoise=1.0, seed=-1
         # forward: latent_noise, positive_tensor, negative_tensor, cond_scale
 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # https://github.com/lllyasviel/Fooocus
+        # 
         # DPM family seems well-suited for XL, since XL sometimes generates overly smooth texture but DPM family sometimes 
         # generate overly dense detail in texture. Their joint effect looks neutral and appealing to human perception.
-        # sample_dpm2_ancestral
-
+        #
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_dpm_2_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
         latent_output = self.process_latent_out(sample) # sample
 
@@ -221,7 +225,6 @@ class KSampler(nn.Module):
         for i in trange(len(sigmas) - 1):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
-            #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
 
@@ -245,7 +248,6 @@ class KSampler(nn.Module):
 
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
-            #
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
 
@@ -255,6 +257,74 @@ class KSampler(nn.Module):
             latent_noise = latent_noise + d * dt
 
         return latent_noise.to(torch.float32)
+
+
+    def sample_dpm_2(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
+        """A sampler inspired by DPM-Solver-2 and Algorithm 2 from Karras et al. (2022)."""
+
+        s_in = latent_noise.new_ones([latent_noise.shape[0]])
+        for i in trange(len(sigmas) - 1):
+            sigma_hat = sigmas[i]
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # model_forward
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            denoised = self.diffusion_predict(latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale)
+            d = to_d(latent_noise, sigma_hat, denoised)
+            if sigmas[i + 1] == 0:
+                # Euler method
+                dt = sigmas[i + 1] - sigma_hat
+                latent_noise = latent_noise + d * dt
+            else:
+                # DPM-Solver-2
+                sigma_mid = sigma_hat.log().lerp(sigmas[i + 1].log(), 0.5).exp()
+                dt_1 = sigma_mid - sigma_hat
+                dt_2 = sigmas[i + 1] - sigma_hat
+                x_2 = latent_noise + d * dt_1
+
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # model_forward
+                #
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                denoised_2 = self.diffusion_predict(x_2, sigma_mid * s_in, positive_tensor, negative_tensor, cond_scale)
+                d_2 = to_d(x_2, sigma_mid, denoised_2)
+                latent_noise = latent_noise + d_2 * dt_2
+        return latent_noise
+
+
+    def sample_dpm_2_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
+        """Ancestral sampling with DPM-Solver second-order steps."""
+
+        s_in = latent_noise.new_ones([latent_noise.shape[0]])
+        for i in trange(len(sigmas) - 1):
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # model_forward
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
+
+            sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
+
+            d = to_d(latent_noise, sigmas[i], denoised)
+
+            if sigma_down == 0:
+                # Euler method
+                dt = sigma_down - sigmas[i]
+                latent_noise = latent_noise + d * dt
+            else:
+                # DPM-Solver-2
+                sigma_mid = sigmas[i].log().lerp(sigma_down.log(), 0.5).exp()
+                dt_1 = sigma_mid - sigmas[i]
+                dt_2 = sigma_down - sigmas[i]
+                x_2 = latent_noise + d * dt_1
+                
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # model_forward
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                denoised_2 = self.diffusion_predict(x_2, sigma_mid * s_in, positive_tensor, negative_tensor, cond_scale)
+
+                d_2 = to_d(x_2, sigma_mid, denoised_2)
+                latent_noise = latent_noise + d_2 * dt_2
+                latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
+        return latent_noise
 
 
     def encode_adm(self, cond, H, W, positive=True):

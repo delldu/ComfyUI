@@ -1,7 +1,5 @@
 from abc import abstractmethod
-import math
-
-import numpy as np
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -485,11 +483,12 @@ class UNetModel(nn.Module):
         # context.size() -- [2, 77, 2048]
         # y.size() -- [2, 2816]
         # control.keys() -- dict_keys(['input', 'middle', 'output'])
-        todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
-        todos.debug.output_var("UNetModel timesteps", timesteps)
-        todos.debug.output_var("UNetModel context", context)
-        todos.debug.output_var("UNetModel y", y)
-        todos.debug.output_var("UNetModel control", control)
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
+            todos.debug.output_var("UNetModel timesteps", timesteps)
+            todos.debug.output_var("UNetModel context", context)
+            todos.debug.output_var("UNetModel y", y)
+            todos.debug.output_var("UNetModel control", control)
 
 
         transformer_options["original_shape"] = list(x.shape)
