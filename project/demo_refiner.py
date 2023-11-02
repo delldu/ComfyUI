@@ -57,9 +57,6 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         else:
             latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
-    # # xxxx9999
-    todos.debug.output_var("positive_tensor", positive_tensor)
-    todos.debug.output_var("negative_tensor", negative_tensor)
 
     for k, v in positive_tensor.items():
         positive_tensor[k] = v.cuda()

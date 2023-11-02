@@ -55,7 +55,8 @@ def Normalize(in_channels, dtype=None, device=None):
 
 
 class CrossAttentionPytorch(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0., dtype=None, device=None, operations=SDXL.util):
+    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0., dtype=None, 
+        device=None, operations=SDXL.util):
         # super(CrossAttentionPytorch, self).__init__()
         super().__init__()
         inner_dim = dim_head * heads
@@ -68,7 +69,10 @@ class CrossAttentionPytorch(nn.Module):
         self.to_k = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
         self.to_v = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
 
-        self.to_out = nn.Sequential(operations.Linear(inner_dim, query_dim, dtype=dtype, device=device), nn.Dropout(dropout))
+        self.to_out = nn.Sequential(
+                        operations.Linear(inner_dim, query_dim, dtype=dtype, device=device),
+                        nn.Dropout(dropout),
+                    )
         # self.attention_op: Optional[Any] = None
 
     def forward(self, x, context=None, value=None, mask=None):

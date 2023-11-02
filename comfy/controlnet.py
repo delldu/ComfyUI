@@ -90,7 +90,7 @@ class ControlBase:
                 key = 'input'
                 x = control_input[i]
                 if x is not None:
-                    x *= self.strength
+                    x *= self.strength # xxxx9999
                     if x.dtype != output_dtype:
                         x = x.to(output_dtype)
                 out[key].insert(0, x)
@@ -113,7 +113,8 @@ class ControlBase:
                         x = x.to(output_dtype)
 
                 out[key].append(x)
-        if control_prev is not None:
+                
+        if control_prev is not None: #False
             for x in ['input', 'middle', 'output']:
                 o = out[x]
                 for i in range(len(control_prev[x])):

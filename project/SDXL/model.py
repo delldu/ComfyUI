@@ -24,7 +24,6 @@ class SDXLRefiner(KSampler):
 
     def encode_adm(self, cond, H, W, positive=True):
         pooled = cond['pool_encoded']
-        todos.debug.output_var("SDXLRefiner clip_pooled", pooled)
 
         crop_h = 0
         crop_w = 0
@@ -49,6 +48,7 @@ class SDXLBase(KSampler):
         self.noise_augmentor = CLIPEmbedNoiseAugmentation()
 
     def unclip_adm(self, image_embeds):
+        # xxxx9999
         # image_embeds.size() -- [1, 1280]
         # tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
 
@@ -72,7 +72,6 @@ class SDXLBase(KSampler):
             pooled = self.unclip_adm(cond['clip_embeds'])[:,:1280]
         else:
             pooled = cond['pool_encoded']
-        todos.debug.output_var("SDXLBase clip_pooled", pooled)
 
         crop_w = 0
         crop_h = 0

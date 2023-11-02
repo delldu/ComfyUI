@@ -1,6 +1,6 @@
 #taken from: https://github.com/lllyasviel/ControlNet
 #and modified
-
+import os
 import torch
 import torch as th
 import torch.nn as nn
@@ -279,11 +279,13 @@ class ControlNet(nn.Module):
 
     def forward(self, x, hint, timesteps, context, y=None, **kwargs):
         # kwargs --  {}
-        todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
-        todos.debug.output_var("ControlNet hint", hint)
-        todos.debug.output_var("ControlNet timesteps", timesteps)
-        todos.debug.output_var("ControlNet context", context)
-        todos.debug.output_var("ControlNet y", y)
+
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+            todos.debug.output_var("ControlNet hint", hint)
+            todos.debug.output_var("ControlNet timesteps", timesteps)
+            todos.debug.output_var("ControlNet context", context)
+            todos.debug.output_var("ControlNet y", y)
 
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
         emb = self.time_embed(t_emb)

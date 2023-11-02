@@ -202,8 +202,6 @@ class VAE:
         return samples
 
     def decode(self, samples_in):
-        todos.debug.output_var("VAEDecode input", samples_in)
-
         self.first_stage_model = self.first_stage_model.to(self.device)
         try:
             memory_used = (2562 * samples_in.shape[2] * samples_in.shape[3] * 64) * 1.7
@@ -230,8 +228,6 @@ class VAE:
         self.first_stage_model = self.first_stage_model.to(self.offload_device)
         pixel_samples = pixel_samples.cpu().movedim(1,-1)
 
-        todos.debug.output_var("VAEDecode output", pixel_samples)
-
         return pixel_samples
 
     def decode_tiled(self, samples, tile_x=64, tile_y=64, overlap = 16):
@@ -241,8 +237,6 @@ class VAE:
         return output.movedim(1,-1)
 
     def encode(self, pixel_samples):
-        todos.debug.output_var("VAEEncode input", pixel_samples)
-
         self.first_stage_model = self.first_stage_model.to(self.device)
         pixel_samples = pixel_samples.movedim(-1,1)
         try:
@@ -266,8 +260,6 @@ class VAE:
             samples = self.encode_tiled_(pixel_samples)
 
         self.first_stage_model = self.first_stage_model.to(self.offload_device)
-
-        todos.debug.output_var("VAEEncode output", samples)
 
         return samples
 
@@ -463,7 +455,7 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
         vae = VAE(sd=vae_sd)
 
     if output_clip:
-        w = WeightsLoader()
+        w = WeightsLoader() # xxxx9999
         clip_target = model_config.clip_target()
         clip = CLIP(clip_target, embedding_directory=embedding_directory)
         w.cond_stage_model = clip.cond_stage_model

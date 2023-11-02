@@ -37,8 +37,6 @@ clip_token = model.clip_token
 clip_text = model.clip_text
 clip_vision = model.clip_vision
 
-
-
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8
 
@@ -70,7 +68,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
 
     with torch.no_grad():
         clip_embeds = clip_vision(load_torch_image(input_image)) # CLIPVisionEncode
-    positive_tensor['clip_embeds'] = clip_embeds
+    positive_tensor['clip_embeds'] = clip_embeds # xxxx9999 --> vision_guide/vision_weight/vision_noise
 
     for k, v in positive_tensor.items():
         positive_tensor[k] = v.cuda()

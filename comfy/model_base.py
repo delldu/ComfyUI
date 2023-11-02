@@ -184,7 +184,6 @@ class SDXLRefiner(BaseModel):
 
     def encode_adm(self, **kwargs):
         clip_pooled = kwargs["pooled_output"] # xxxx8888 sdxl_pooled(kwargs, self.noise_augmentor)
-        todos.debug.output_var("SDXLRefiner clip_pooled", clip_pooled)
         
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
@@ -219,10 +218,8 @@ class SDXL(BaseModel):
         # clip_vision
         # kwargs.keys() -- ['device', 'pooled_output', 'unclip_conditioning', 'width', 'height', 'prompt_type']
         # width, height -- 1024
-        # for negative, tensor [clip_pooled] size: [1, 1280], min: 0.0, max: 0.0, mean: 0.0
 
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
-        todos.debug.output_var("SDXLBase clip_pooled", clip_pooled)
         
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)

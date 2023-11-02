@@ -132,7 +132,11 @@ class KSampler(nn.Module):
             with torch.no_grad():
                 control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
 
-            # xxxx8888
+            # The following come from function control_merge
+            weight = 1.0
+            if 'lora_weight' in positive_tensor: # xxxx9999
+                weight = positive_tensor['lora_weight']
+
             for i in range(len(control_output)):
                 if i == (len(control_output) - 1):
                     key = 'middle'
@@ -140,7 +144,7 @@ class KSampler(nn.Module):
                 else:
                     key = 'output'
                     index = i
-                ctrl2[key].append(control_output[i])
+                ctrl2[key].append(control_output[i] * weight)
 
         with torch.no_grad():
             e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=ctrl2)
@@ -170,7 +174,6 @@ class KSampler(nn.Module):
         positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor, H, W, positive=True)
         negative_tensor["adm_encoded"] = self.encode_adm(negative_tensor, H, W, positive=False)
 
-        # xxxx8888
         print("-" * 120)
         todos.debug.output_var("positive_tensor", positive_tensor)
         todos.debug.output_var("negative_tensor", negative_tensor)

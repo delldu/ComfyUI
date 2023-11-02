@@ -314,11 +314,12 @@ class ControlNet(nn.Module):
         return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
 
     def forward(self, x, hint, timesteps, context, y=None):
-        todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
-        todos.debug.output_var("ControlNet hint", hint)
-        todos.debug.output_var("ControlNet timesteps", timesteps)
-        todos.debug.output_var("ControlNet context", context)
-        todos.debug.output_var("ControlNet y", y)
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+            todos.debug.output_var("ControlNet hint", hint)
+            todos.debug.output_var("ControlNet timesteps", timesteps)
+            todos.debug.output_var("ControlNet context", context)
+            todos.debug.output_var("ControlNet y", y)
 
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
         emb = self.time_embed(t_emb)
@@ -346,7 +347,8 @@ class ControlNet(nn.Module):
         h = self.middle_block(h, emb, context)
         outs.append(self.middle_block_out(h, emb, context))
 
-        todos.debug.output_var("ControlNet outs", outs)
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("ControlNet output", outs)
 
         return outs
 

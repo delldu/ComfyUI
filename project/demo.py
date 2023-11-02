@@ -15,8 +15,7 @@ import numpy as np
 import torch
 import einops
 
-# import cv2
-import SDXL
+# import SDXL
 
 from SDXL import (
     create_sdxl_base_model,
@@ -42,45 +41,6 @@ clip_token = model.clip_token
 clip_text = model.clip_text
 clip_vision = model.clip_vision
 
-# def ImageResize(image):
-#     MAX_HW = 1024
-#     H, W, C = image.shape
-
-#     if H > MAX_HW or W > MAX_HW:
-#         s = min(MAX_H / H, MAX_W / W)
-#         H, W = int(s * H), int(s * W)
-
-#     NH, NW = (H // 8) * 8, (W // 8) * 8
-#     if NH != H or NW != W:
-#         return cv2.resize(image, (NW, NH))
-
-#     return image
-
-# def HWC3(x):
-#     assert x.dtype == np.uint8
-#     if x.ndim == 2:
-#         x = x[:, :, None]
-#     assert x.ndim == 3
-#     H, W, C = x.shape
-#     assert C == 1 or C == 3 or C == 4
-#     if C == 3:
-#         return x
-#     if C == 1:
-#         return np.concatenate([x, x, x], axis=2)
-#     if C == 4:
-#         color = x[:, :, 0:3].astype(np.float32)
-#         alpha = x[:, :, 3:4].astype(np.float32) / 255.0
-#         y = color * alpha + 255.0 * (1.0 - alpha)
-#         y = y.clip(0, 255).astype(np.uint8)
-#         return y
-
-
-# class CannyDetector:
-#     def __call__(self, img, low_threshold, high_threshold):
-#         return cv2.Canny(img, low_threshold, high_threshold)
-
-
-# guide_generator = CannyDetector()
 
 def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resolution, time_steps, 
     cond_scale, denoise, seed, low_threshold, high_threshold):
@@ -104,11 +64,6 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
         positive_tensor = clip_text(positive_tokens)
         negative_tensor = clip_text(negative_tokens)
         latent_image = vae_encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
-
-    # if input_image is not None:
-    #     guide_image = HWC3(guide_generator(input_image, low_threshold, high_threshold))
-    # else:
-    #     guide_image = np.zeros((image_resolution, image_resolution, 3)).astype(np.uint8)
 
     positive_tensor['lora_guide'] = guide_image
 

@@ -780,7 +780,6 @@ def sample_shell(model, noise, positive, negative, cfg, device, sampler, sigmas,
         positive = encode_adm(model, positive, noise.shape[0], noise.shape[3], noise.shape[2], device, "positive")
         negative = encode_adm(model, negative, noise.shape[0], noise.shape[3], noise.shape[2], device, "negative")
 
-    # xxxx8888
     print("-" * 120)
     positive_tensor = {}
     positive_tensor["text_encoded"] = positive[0][0]

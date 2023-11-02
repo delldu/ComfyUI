@@ -521,9 +521,6 @@ class CLIPTextEncode(nn.Module):
             l_out, l_pooled = self.clip_l(torch.LongTensor(token_l).to(device))
             g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
-            todos.debug.output_var("CLIPTextEncode/Base output text_encoded", torch.cat([l_out, g_out], dim=-1))
-            todos.debug.output_var("CLIPTextEncode/Base output pool_encoded",  g_pooled)            
-
             return {
                 "text_encoded" : torch.cat([l_out, g_out], dim=-1), 
                 "pool_encoded" : g_pooled
@@ -533,8 +530,6 @@ class CLIPTextEncode(nn.Module):
         token_g = tokens['g']
         g_out, g_pooled = self.clip_g(torch.LongTensor(token_g).to(device))
 
-        todos.debug.output_var("CLIPTextEncode/Refiner output text_encoded", g_out)
-        todos.debug.output_var("CLIPTextEncode/Refiner output pool_encoded", g_pooled)
         return {
             "text_encoded" : g_out, 
             "pool_encoded" : g_pooled

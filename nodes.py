@@ -677,14 +677,6 @@ class ControlNetApplyAdvanced:
         if strength == 0:
             return (positive, negative)
 
-        # tensor [positive[0][0]] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.026303
-        # positive[0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -4.437859, max: 3.793518, mean: 0.003348
-
-        # tensor [negative[0][0]] size: [1, 77, 2048], min: -809.318359, max: 853.722839, mean: 0.023284
-        # negative[0][1] is dict:
-        #     tensor [pooled_output] size: [1, 1280], min: -5.141018, max: 5.103264, mean: -9.5e-05
-
         # tensor [image] size: [1, 1024, 1024, 3], min: 0.0, max: 1.0, mean: 0.022768, canny_edge
         control_hint = image.movedim(-1,1) # size() -- [1, 3, 1024, 1024]
         cnets = {}
@@ -1240,6 +1232,7 @@ class SetLatentNoiseMask:
         s["noise_mask"] = mask.reshape((-1, 1, mask.shape[-2], mask.shape[-1]))
         return (s,)
 
+# xxxx_root
 def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0, disable_noise=False, start_step=None, last_step=None, force_full_denoise=False):
     latent_image = latent["samples"]
     if disable_noise:
@@ -1248,10 +1241,6 @@ def common_ksampler(model, seed, steps, cfg, sampler_name, scheduler, positive, 
     else:
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
         noise = comfy.sample.prepare_noise(latent_image, seed, batch_inds)
-
-    # xxxx_refine_0000 1
-    # tensor [latent_image] size: [1, 4, 75, 57], min: -22.981834, max: 25.116404, mean: -0.20228, vae_encode_output
-    # tensor [noise] size: [1, 4, 75, 57], min: -3.593438, max: 3.433766, mean: -0.015358, latent_noise
 
     noise_mask = None
     if "noise_mask" in latent:
