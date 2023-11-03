@@ -623,7 +623,9 @@ class UNetModel(nn.Module):
             todos.debug.output_var("UNetModel timesteps", timesteps)
             todos.debug.output_var("UNetModel context", context)
             todos.debug.output_var("UNetModel y", y)
-            todos.debug.output_var("UNetModel control", control)
+            todos.debug.output_var("UNetModel control['input']", control['input'])
+            todos.debug.output_var("UNetModel control['middle']", control['middle'])
+            todos.debug.output_var("UNetModel control['output']", control['output'])
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0
@@ -680,6 +682,11 @@ class UNetModel(nn.Module):
 
         h = h.type(x.dtype)
         if self.predict_codebook_ids:
+            pdb.set_trace()
             return self.id_predictor(h)
-        else:
-            return self.out(h)
+
+        output = self.out(h)
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("UNetModel output", output)
+
+        return output            

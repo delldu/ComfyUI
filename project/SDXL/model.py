@@ -29,7 +29,6 @@ class SDXLRefiner(KSampler):
         crop_w = 0
         aesthetic_score = 6.0 if positive else 2.5
 
-
         out = []
         out.append(self.embedder(torch.Tensor([H * 8]))) # H * 8 -- 600
         out.append(self.embedder(torch.Tensor([W * 8]))) # W * 8 -- 456

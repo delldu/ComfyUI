@@ -36,6 +36,7 @@ class GELUActivation(nn.Module):
     def __init__(self, use_gelu_python: bool = False):
         super().__init__()
         if use_gelu_python:
+            pdb.set_trace()
             self.act = self._gelu_python
         else:
             self.act = nn.functional.gelu
@@ -191,12 +192,12 @@ class CLIPEncoder(nn.Module):
     def forward(self, inputs_embeds, causal_attention_mask=None):
         encoder_states = ()
         hidden_states = inputs_embeds
-        for idx, encoder_layer in enumerate(self.layers):
+        for idx, encoder_layer in enumerate(self.layers): # len(self.layers) -- 12
             encoder_states = encoder_states + (hidden_states,)
             layer_output = encoder_layer(hidden_states, causal_attention_mask)
             hidden_states = layer_output
 
-        encoder_states = encoder_states + (hidden_states,)
+        encoder_states = encoder_states + (hidden_states,) # len(encoder_states) -- 13
 
         return {
             "last_hidden_state" : hidden_states, 
@@ -243,13 +244,17 @@ class CLIPTextTransformer(nn.Module):
         last_hidden_state = encoder_outputs["last_hidden_state"]
         last_hidden_state = self.final_layer_norm(last_hidden_state)
 
+        # last_hidden_state.size() -- [1, 77, 768]
+        # torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device) --tensor([0])
+        # input_tokens.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1) -- tensor([4])
+
         pool_encoded = last_hidden_state[
             torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device),
             input_tokens.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1),
         ]
 
         return {
-            "hidden_states": encoder_outputs["hidden_states"],
+            "hidden_states": encoder_outputs["hidden_states"], # xxxx9999
             "pool_encoded": pool_encoded,
         }
 
@@ -433,6 +438,7 @@ class SDXLClipL(nn.Module):
         self.layer_norm_hidden_state = True
 
     def forward(self, tokens):
+        tokens = torch.LongTensor(tokens)
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
         if self.layer_norm_hidden_state: # True
@@ -476,13 +482,14 @@ class SDXLClipG(nn.Module):
         self.transformer = CLIPTextModel(config)
         self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
         self.logit_scale = nn.Parameter(torch.tensor(4.6055))
-        self.layer_norm_hidden_state = True
+        self.layer_norm_hidden_state = False
 
     def forward(self, tokens):
+        tokens = torch.LongTensor(tokens)
         outputs = self.transformer(tokens)
         z = outputs["hidden_states"][self.layer_idx]
 
-        if self.layer_norm_hidden_state: # False
+        if self.layer_norm_hidden_state:
             z = self.transformer.text_model.final_layer_norm(z)
         pooled = outputs["pool_encoded"].float().to(self.text_projection.device) @ self.text_projection.float()
 
@@ -503,7 +510,7 @@ class CLIPTextEncode(nn.Module):
             self.clip_g = SDXLClipG()
         else: # refiner_1.0
             self.clip_g = SDXLClipG()
-            self.clip_g.layer_norm_hidden_state = False
+            # self.clip_g.layer_norm_hidden_state = False
 
         for param in self.parameters():
             param.requires_grad = False

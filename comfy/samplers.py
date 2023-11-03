@@ -298,7 +298,8 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
 
                 if 'model_function_wrapper' in model_options:
                     pdb.set_trace()
-                    output = model_options['model_function_wrapper'](model_function, {"input": input_x, "timestep": timestep_, "c": c, "cond_or_uncond": cond_or_uncond}).chunk(batch_chunks)
+                    output = model_options['model_function_wrapper'](model_function, {"input": input_x, "timestep": timestep_, 
+                        "c": c, "cond_or_uncond": cond_or_uncond}).chunk(batch_chunks)
                 else:
                     # check control['...'] for positive/negative ???
                     # input_x.size() -- [2, 4, 128, 128]

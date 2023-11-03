@@ -31,24 +31,15 @@ class AutoencoderKL(nn.Module):
               target: torch.nn.Identity
     """
 
-    def __init__(self, version, embed_dim=4):
+    def __init__(self, version, embed_dim=4, z_channels=4):
         super(AutoencoderKL, self).__init__()
-        ddconfig = {
-            "z_channels": 4,
-            "resolution": 256,
-            "in_channels": 3,
-            "out_ch": 3,
-            "ch": 128,
-            "ch_mult": [1, 2, 4, 4],
-            "num_res_blocks": 2,
-            "dropout": 0.0,
-        }
         self.version = version
-        self.encoder = Encoder(**ddconfig)
-        self.quant_conv = nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
+        self.encoder = Encoder()
 
-        self.post_quant_conv = nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
-        self.decoder = Decoder(**ddconfig)  # model size 190 M
+        self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
+
+        self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
+        self.decoder = Decoder()  # model size 190 M
 
         for param in self.parameters():
             param.requires_grad = False
@@ -81,26 +72,16 @@ class AutoencoderKL(nn.Module):
 
 # create_vae_encode_model
 class VAEEncode(nn.Module):
-    def __init__(self, version, embed_dim=4):
-        super(VAEEncode, self).__init__()
-        ddconfig = {
-            "z_channels": 4,
-            "resolution": 256,
-            "in_channels": 3,
-            "out_ch": 3,
-            "ch": 128,
-            "ch_mult": [1, 2, 4, 4],
-            "num_res_blocks": 2,
-            "dropout": 0.0,
-        }
+    def __init__(self, version, embed_dim=4, z_channels=4):
+        super().__init__()
+
         self.version = version
-        self.encoder = Encoder(**ddconfig)
-        self.quant_conv = nn.Conv2d(2 * ddconfig["z_channels"], 2 * embed_dim, 1)
+        self.encoder = Encoder()
+        self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
 
         for param in self.parameters():
             param.requires_grad = False
 
-        # load_vaeencode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
         x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
@@ -117,30 +98,33 @@ class VAEEncode(nn.Module):
 
 # create_vae_decode_model
 class VAEDecode(nn.Module):
-    def __init__(self, version, embed_dim=4):
-        super(VAEDecode, self).__init__()
-        ddconfig = {
-            "z_channels": 4,
-            "resolution": 256,
-            "in_channels": 3,
-            "out_ch": 3,
-            "ch": 128,
-            "ch_mult": [1, 2, 4, 4],
-            "num_res_blocks": 2,
-            "dropout": 0.0,
-        }
+    def __init__(self, version, embed_dim=4, z_channels=4):
+        super().__init__()
+        # ddconfig = {
+        #     "z_channels": 4,
+        #     "resolution": 256,
+        #     "in_channels": 3,
+        #     "out_ch": 3,
+        #     "ch": 128,
+        #     "ch_mult": [1, 2, 4, 4],
+        #     "num_res_blocks": 2,
+        #     "dropout": 0.0,
+        # }
         self.version = version
-        self.post_quant_conv = nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
-        self.decoder = Decoder(**ddconfig)  # model size 190 M
+        self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
+        # self.decoder = Decoder(**ddconfig)  # model size 190 M
+        self.decoder = Decoder()  # model size 190 M
 
         for param in self.parameters():
             param.requires_grad = False
 
-        # load_vaedecode_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, z):
         z = self.post_quant_conv(z)
         dec = self.decoder(z)
+        # tensor [dec] size: [1, 3, 600, 456], min: -1.524532, max: 1.899036, mean: 0.059854
+        # tensor [zout] size: [1, 3, 600, 456], min: -1.649717, max: 1.515323, mean: 0.132423
+
         out = ((dec + 1.0)/2.0).clamp(0.0, 1.0)
 
         return out
@@ -213,7 +197,7 @@ class ResnetBlock(nn.Module):
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
         super(AttnBlock, self).__init__()
-        self.in_channels = in_channels
+        # self.in_channels = in_channels
 
         self.norm = Normalize(in_channels)
         self.q = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
@@ -248,7 +232,7 @@ class AttnBlock(nn.Module):
         return x + h_
 
 class Encoder(nn.Module):
-    def __init__(self, *,
+    def __init__(self, 
         ch=128,
         out_ch=3,
         ch_mult=(1, 2, 4, 4),
@@ -258,15 +242,14 @@ class Encoder(nn.Module):
         resolution=256,
         z_channels=4,
     ):
-        super(Encoder, self).__init__()
-        self.ch = ch
+        super().__init__()
+
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
-        self.resolution = resolution
-        self.in_channels = in_channels
+        # self.in_channels = in_channels
 
         # downsampling
-        self.conv_in = nn.Conv2d(in_channels, self.ch, kernel_size=3, stride=1, padding=1)
+        self.conv_in = nn.Conv2d(in_channels, ch, kernel_size=3, stride=1, padding=1)
 
         curr_res = resolution # 256
         in_ch_mult = (1,) + tuple(ch_mult)
@@ -326,7 +309,6 @@ class Encoder(nn.Module):
         h = self.conv_out(h)
         return h
 
-
 class Decoder(nn.Module):
     def __init__(self, *,
         ch=128,
@@ -339,11 +321,10 @@ class Decoder(nn.Module):
         z_channels=4,
     ):
         super(Decoder, self).__init__()
-        self.ch = ch
+
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
-        self.resolution = resolution
-        self.in_channels = in_channels
+        # self.in_channels = in_channels
 
         # compute in_ch_mult, block_in and curr_res at lowest res
         in_ch_mult = (1,) + tuple(ch_mult)
@@ -390,6 +371,7 @@ class Decoder(nn.Module):
         h = self.mid.attn_1(h)
         h = self.mid.block_2(h)
 
+        # xxxx9999
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks + 1):

@@ -78,7 +78,7 @@ def get_pairs(word):
 
 
 def basic_clean(text):
-    text = text.replace("\n", " ")
+    text = text.replace("\n", ",")
     # text = text.replace(",", " ")
     text = ftfy.fix_text(text)
     text = html.unescape(html.unescape(text))

@@ -9,6 +9,9 @@ from typing import Optional, Any
 from comfy import model_management
 import comfy.ops
 
+import todos
+import pdb
+
 if model_management.xformers_enabled_vae():
     import xformers
     import xformers.ops
@@ -83,6 +86,8 @@ class Downsample(nn.Module):
                                         kernel_size=3,
                                         stride=2,
                                         padding=0)
+        else:
+            pdb.set_trace()
 
     def forward(self, x):
         if self.with_conv:
@@ -141,8 +146,10 @@ class ResnetBlock(nn.Module):
         h = self.conv1(h)
 
         if temb is not None:
+            pdb.set_trace()
             h = h + self.temb_proj(self.swish(temb))[:,:,None,None]
-
+        else:
+            pass
         h = self.norm2(h)
         h = self.swish(h)
         h = self.dropout(h)
@@ -299,6 +306,8 @@ class Model(nn.Module):
                  attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
                  resolution, use_timestep=True, use_linear_attn=False, attn_type="vanilla"):
         super().__init__()
+        pdb.set_trace()
+
         if use_linear_attn: attn_type = "linear"
         self.ch = ch
         self.temb_ch = self.ch*4
@@ -377,6 +386,7 @@ class Model(nn.Module):
                                          dropout=dropout))
                 block_in = block_out
                 if curr_res in attn_resolutions:
+                    pdb.set_trace()
                     attn.append(make_attn(block_in, attn_type=attn_type))
             up = nn.Module()
             up.block = block
@@ -415,6 +425,8 @@ class Model(nn.Module):
             for i_block in range(self.num_res_blocks):
                 h = self.down[i_level].block[i_block](hs[-1], temb)
                 if len(self.down[i_level].attn) > 0:
+                    pdb.set_trace()
+
                     h = self.down[i_level].attn[i_block](h)
                 hs.append(h)
             if i_level != self.num_resolutions-1:
@@ -432,6 +444,7 @@ class Model(nn.Module):
                 h = self.up[i_level].block[i_block](
                     torch.cat([h, hs.pop()], dim=1), temb)
                 if len(self.up[i_level].attn) > 0:
+                    pdb.set_trace()
                     h = self.up[i_level].attn[i_block](h)
             if i_level != 0:
                 h = self.up[i_level].upsample(h)
@@ -447,11 +460,12 @@ class Model(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), num_res_blocks,
-                 attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
-                 resolution, z_channels, double_z=True, use_linear_attn=False, attn_type="vanilla",
+    def __init__(self, *, ch=128, out_ch=3, ch_mult=(1,2,4,4), num_res_blocks=2,
+                 attn_resolutions=[], dropout=0.0, resamp_with_conv=True, in_channels=3,
+                 resolution=256, z_channels=4, double_z=True, use_linear_attn=False, attn_type="vanilla",
                  **ignore_kwargs):
         super().__init__()
+        # ignore_kwargs={}
         if use_linear_attn: attn_type = "linear"
         self.ch = ch
         self.temb_ch = 0
@@ -483,6 +497,7 @@ class Encoder(nn.Module):
                                          dropout=dropout))
                 block_in = block_out
                 if curr_res in attn_resolutions:
+                    pdb.set_trace()
                     attn.append(make_attn(block_in, attn_type=attn_type))
             down = nn.Module()
             down.block = block
@@ -521,6 +536,8 @@ class Encoder(nn.Module):
             for i_block in range(self.num_res_blocks):
                 h = self.down[i_level].block[i_block](h, temb)
                 if len(self.down[i_level].attn) > 0:
+                    pdb.set_trace()
+
                     h = self.down[i_level].attn[i_block](h)
             if i_level != self.num_resolutions-1:
                 h = self.down[i_level].downsample(h)
@@ -538,14 +555,16 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), num_res_blocks,
-                 attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
-                 resolution, z_channels, give_pre_end=False, tanh_out=False, use_linear_attn=False,
+    def __init__(self, *, ch=128, out_ch=3, ch_mult=(1,2,4,4), num_res_blocks=2,
+                 attn_resolutions=[], dropout=0.0, resamp_with_conv=True, in_channels=3,
+                 resolution=256, z_channels=4, give_pre_end=False, tanh_out=False, use_linear_attn=False,
                  conv_out_op=comfy.ops.Conv2d,
-                 resnet_op=ResnetBlock,
-                 attn_op=AttnBlock,
+                 resnet_op=ResnetBlock, # <class 'comfy.ldm.modules.diffusionmodules.model.ResnetBlock'>
+                 attn_op=AttnBlock, # <class 'comfy.ldm.modules.diffusionmodules.model.AttnBlock'>
                 **ignorekwargs):
         super().__init__()
+        # ignorekwargs = {'double_z': True}
+
         if use_linear_attn: attn_type = "linear"
         self.ch = ch
         self.temb_ch = 0
@@ -596,7 +615,9 @@ class Decoder(nn.Module):
                                          dropout=dropout))
                 block_in = block_out
                 if curr_res in attn_resolutions:
+                    pdb.set_trace()
                     attn.append(attn_op(block_in))
+
             up = nn.Module()
             up.block = block
             up.attn = attn
@@ -633,17 +654,21 @@ class Decoder(nn.Module):
             for i_block in range(self.num_res_blocks+1):
                 h = self.up[i_level].block[i_block](h, temb, **kwargs)
                 if len(self.up[i_level].attn) > 0:
+                    pdb.set_trace()
                     h = self.up[i_level].attn[i_block](h, **kwargs)
             if i_level != 0:
                 h = self.up[i_level].upsample(h)
 
         # end
         if self.give_pre_end:
+            pdb.set_trace()
             return h
 
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h, **kwargs)
         if self.tanh_out:
+            pdb.set_trace()
             h = torch.tanh(h)
+
         return h

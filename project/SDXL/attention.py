@@ -1,7 +1,7 @@
 import math
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
 from einops import rearrange
 from typing import Optional, Any
 
@@ -30,11 +30,15 @@ class GEGLU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, dim_out=None, mult=4, glu=False, dropout=0., dtype=None, device=None, 
+    def __init__(self, dim, dim_out=None, mult=4, glu=True, dropout=0., dtype=None, device=None, 
         operations=SDXL.util):
         super().__init__()
         inner_dim = int(dim * mult)
         dim_out = default(dim_out, dim)
+
+        if not glu:
+            pdb.set_trace()
+
         project_in = nn.Sequential(
             operations.Linear(dim, inner_dim, dtype=dtype, device=device),
             nn.GELU()
@@ -73,13 +77,13 @@ class CrossAttentionPytorch(nn.Module):
                         operations.Linear(inner_dim, query_dim, dtype=dtype, device=device),
                         nn.Dropout(dropout),
                     )
-        # self.attention_op: Optional[Any] = None
 
     def forward(self, x, context=None, value=None, mask=None):
         q = self.to_q(x)
         context = default(context, x)
         k = self.to_k(context)
         if value is not None:
+            pdb.set_trace()
             v = self.to_v(value)
             del value
         else:
@@ -95,10 +99,7 @@ class CrossAttentionPytorch(nn.Module):
 
         if exists(mask):
             raise NotImplementedError
-        out = (
-            out.transpose(1, 2).reshape(b, -1, self.heads * self.dim_head)
-        )
-
+        out = out.transpose(1, 2).reshape(b, -1, self.heads * self.dim_head)
 
         return self.to_out(out)
 
@@ -106,13 +107,12 @@ class CrossAttentionPytorch(nn.Module):
 CrossAttention = CrossAttentionPytorch
 class BasicTransformerBlock(nn.Module):
     def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True,
-                 disable_self_attn=False, dtype=None, device=None, operations=SDXL.util):
+                 dtype=None, device=None, operations=SDXL.util):
         # super(BasicTransformerBlock, self).__init__()
         super().__init__()
 
-        self.disable_self_attn = disable_self_attn
         self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout,
-                              context_dim=context_dim if self.disable_self_attn else None, dtype=dtype, device=device, operations=operations)  # is a self-attention if not self.disable_self_attn
+                              context_dim=None, dtype=dtype, device=device, operations=operations)
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff, dtype=dtype, device=device, operations=operations)
         self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
                               heads=n_heads, dim_head=d_head, dropout=dropout, dtype=dtype, device=device, operations=operations)  # is self-attn if context is none
@@ -126,10 +126,7 @@ class BasicTransformerBlock(nn.Module):
 
     def forward(self, x, context=None, transformer_options={}):
         n = self.norm1(x)
-        if self.disable_self_attn:
-            context_attn1 = context
-        else:
-            context_attn1 = None
+        context_attn1 = None
         n = self.attn1(n, context=context_attn1, value=None)
 
         x += n
@@ -153,8 +150,8 @@ class SpatialTransformer(nn.Module):
     """
     def __init__(self, in_channels, n_heads, d_head,
                  depth=1, dropout=0., context_dim=None,
-                 disable_self_attn=False, use_linear=True,
-                 use_checkpoint=True, dtype=None, device=None, operations=SDXL.util):
+                 use_linear=True,
+                 dtype=None, device=None, operations=SDXL.util):
         super().__init__()
         if exists(context_dim) and not isinstance(context_dim, list):
             context_dim = [context_dim] * depth
@@ -162,6 +159,7 @@ class SpatialTransformer(nn.Module):
         inner_dim = n_heads * d_head
         self.norm = Normalize(in_channels, dtype=dtype, device=device)
         if not use_linear:
+            pdb.set_trace()
             self.proj_in = operations.Conv2d(in_channels,
                                      inner_dim,
                                      kernel_size=1,
@@ -172,10 +170,11 @@ class SpatialTransformer(nn.Module):
 
         self.transformer_blocks = nn.ModuleList(
             [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim[d],
-                                   disable_self_attn=disable_self_attn, checkpoint=use_checkpoint, dtype=dtype, device=device, operations=operations)
+                                   dtype=dtype, device=device, operations=operations)
                 for d in range(depth)]
         )
         if not use_linear:
+            pdb.set_trace()
             self.proj_out = operations.Conv2d(inner_dim,in_channels,
                                                   kernel_size=1,
                                                   stride=1,
@@ -192,6 +191,7 @@ class SpatialTransformer(nn.Module):
         x_in = x
         x = self.norm(x)
         if not self.use_linear:
+            pdb.set_trace()
             x = self.proj_in(x)
         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
         if self.use_linear:
@@ -204,6 +204,7 @@ class SpatialTransformer(nn.Module):
             x = self.proj_out(x)
         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
         if not self.use_linear:
+            pdb.set_trace()
             x = self.proj_out(x)
         return x + x_in
 

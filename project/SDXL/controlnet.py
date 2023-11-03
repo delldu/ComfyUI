@@ -73,12 +73,11 @@ class ControlLoraOps:
     class Linear(nn.Module):
         def __init__(self, in_features: int, out_features: int, bias: bool = True,
                     device=None, dtype=None) -> None:
-            factory_kwargs = {'device': device, 'dtype': dtype}
+            # factory_kwargs = {'device': device, 'dtype': dtype}
             super().__init__()
             # in_features = 320
             # out_features = 1280
             # bias = True
-            # device = None
             self.biasx = bias
             self.dtype = torch.float16
             self.in_features = in_features
@@ -90,10 +89,9 @@ class ControlLoraOps:
 
         def forward(self, input):
             input = input.to(self.dtype)
-            if self.up is not None: # False
+            if self.up is not None:
                 return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
                         self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
-                # F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
             else:
                 return F.linear(input, self.weight.to(input.device), self.bias)
 
@@ -116,7 +114,7 @@ class ControlLoraOps:
             dtype=None
         ):
             super().__init__()
-            self.in_channels = in_channels
+            # self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
             self.stride = stride
@@ -152,7 +150,7 @@ class ControlLoraOps:
 class ControlNet(nn.Module):
     def __init__(
         self,
-        image_size=32,
+        # image_size=32,
         in_channels=4,
         model_channels=320,
         hint_channels=3,
@@ -161,35 +159,22 @@ class ControlNet(nn.Module):
         dropout=0.0,
         channel_mult=(1, 2, 4),
         conv_resample=True,
-        dims=2,
+        dims=2, # 2D
         use_fp16=True,
-        num_heads=-1,
         num_head_channels=64,
-        use_spatial_transformer=True,     # custom transformer support
         transformer_depth=[0, 2, 10],     # custom transformer support
         context_dim=2048,                 # custom transformer support
-        use_linear_in_transformer=True,
         adm_in_channels=2816,
         transformer_depth_middle=10,
         device=None,
         operations=ControlLoraOps(),
     ):
-        super(ControlNet, self).__init__()
+        super().__init__()
         # operations = <comfy.controlnet.ControlLoraOps object>
 
-        assert use_spatial_transformer == True, "use_spatial_transformer has to be true"
-        if use_spatial_transformer:
-            assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
-
-        if context_dim is not None:
-            assert use_spatial_transformer, 'Fool!! You forgot to use the spatial transformer for your cross-attention conditioning...'
-
-        if num_heads == -1:
-            assert num_head_channels != -1, 'Either num_heads or num_head_channels has to be set'
-
         self.dims = dims
-        self.image_size = image_size
-        self.in_channels = in_channels
+        # self.image_size = image_size
+        # self.in_channels = in_channels
         self.model_channels = model_channels
         self.num_res_blocks = len(channel_mult) * [num_res_blocks]
 
@@ -198,7 +183,6 @@ class ControlNet(nn.Module):
         self.channel_mult = channel_mult
         self.conv_resample = conv_resample
         self.dtype = torch.float16 if use_fp16 else torch.float32
-        self.num_heads = num_heads
         self.num_head_channels = num_head_channels
 
         time_embed_dim = model_channels * 4
@@ -266,9 +250,7 @@ class ControlNet(nn.Module):
                             ch, num_heads, dim_head, 
                             depth=transformer_depth[level], 
                             context_dim=context_dim,
-                            disable_self_attn=False, 
-                            use_linear=use_linear_in_transformer,
-                            use_checkpoint=False, 
+                            use_linear=True,
                             operations=operations
                         )
                     )
@@ -296,8 +278,8 @@ class ControlNet(nn.Module):
             ),
             SpatialTransformer(  # always uses a self-attn
                             ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
-                            disable_self_attn=False, use_linear=use_linear_in_transformer,
-                            use_checkpoint=False, operations=operations
+                            use_linear=True,
+                            operations=operations
                         ),
             ResBlock(ch, time_embed_dim, dropout,
                 dims=dims,

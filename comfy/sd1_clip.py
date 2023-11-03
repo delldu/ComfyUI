@@ -112,8 +112,9 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
         self.layer_idx = self.layer_default[1]
 
     def set_up_textual_embeddings(self, tokens, current_embeds):
+        # current_embeds -- Embedding(49408, 1280)
         out_tokens = []
-        next_new_token = token_dict_size = current_embeds.weight.shape[0] - 1
+        next_new_token = token_dict_size = current_embeds.weight.shape[0] - 1 # 49407
         embedding_weights = []
 
         for x in tokens:
@@ -124,7 +125,8 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
                         y = -1
                     tokens_temp += [y]
                 else:
-                    if y.shape[0] == current_embeds.weight.shape[1]:
+                    pdb.set_trace()
+                    if y.shape[0] == current_embeds.weight.shape[1]: # 1280
                         embedding_weights += [y]
                         tokens_temp += [next_new_token]
                         next_new_token += 1
@@ -133,10 +135,13 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
             while len(tokens_temp) < len(x):
                 tokens_temp += [self.empty_tokens[0][-1]]
             out_tokens += [tokens_temp]
+            # pdb.set_trace()
 
         n = token_dict_size
         if len(embedding_weights) > 0:
-            new_embedding = torch.nn.Embedding(next_new_token + 1, current_embeds.weight.shape[1], device=current_embeds.weight.device, dtype=current_embeds.weight.dtype)
+            # pdb.set_trace()
+            new_embedding = torch.nn.Embedding(next_new_token + 1, current_embeds.weight.shape[1], 
+                device=current_embeds.weight.device, dtype=current_embeds.weight.dtype)
             new_embedding.weight[:token_dict_size] = current_embeds.weight[:-1]
             for x in embedding_weights:
                 new_embedding.weight[n] = x
@@ -148,6 +153,7 @@ class SD1ClipModel(torch.nn.Module, ClipTokenWeightEncoder):
         for x in out_tokens:
             processed_tokens += [list(map(lambda a: n if a == -1 else a, x))] #The EOS token should always be the largest one
 
+        # pdb.set_trace()
         return processed_tokens
 
     def forward(self, tokens):

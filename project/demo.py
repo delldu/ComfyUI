@@ -13,9 +13,6 @@ import gradio as gr
 import numpy as np
 
 import torch
-import einops
-
-# import SDXL
 
 from SDXL import (
     create_sdxl_base_model,
@@ -33,7 +30,7 @@ import todos
 import pdb
 
 # create models
-model = create_sdxl_base_model(skip_loara=False)
+model = create_sdxl_base_model(skip_loara=False, skip_vision=True)
 sample_mode = model.sample_mode
 vae_encode = model.vae_encode
 vae_decode = model.vae_decode
@@ -46,7 +43,6 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
     cond_scale, denoise, seed, low_threshold, high_threshold):
 
     if input_image is not None:
-        # input_image = ImageResize(input_image)
         input_tensor = load_torch_image(input_image)
     else:
         input_tensor = torch.zeros(1, 3, 1024, 1024)
@@ -65,6 +61,7 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
         negative_tensor = clip_text(negative_tokens)
         latent_image = vae_encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
 
+    # latent_image.fill_(0)
     positive_tensor['lora_guide'] = guide_image
 
     for k, v in positive_tensor.items():
@@ -77,7 +74,7 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
         latent_output = vae_decode(sample.cpu())
 
-    x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
+    x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 
     canny_edge = (guide_image.movedim(1, -1).squeeze(0).numpy() * 255.0).astype(np.uint8)
     return [255 - canny_edge] + [x_samples[0]]
@@ -86,7 +83,7 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
 block = gr.Blocks().queue()
 with block:
     with gr.Row():
-        gr.Markdown("## SDXL Base Model (Version 1.0) Demo")
+        gr.Markdown("## SDXL 1.0 Base Controlnet Model Demo")
     with gr.Row():
         with gr.Column():
             input_image = gr.Image(source='upload', type="numpy", label='canny')

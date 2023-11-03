@@ -251,6 +251,7 @@ def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
         if dim % 2:
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     else:
+        pdb.set_trace()
         embedding = repeat(timesteps, 'b -> b d', d=dim)
     return embedding
 
@@ -267,6 +268,8 @@ def avg_pool_nd(dims, *args, **kwargs):
     """
     Create a 1D, 2D, or 3D average pooling module.
     """
+    pdb.set_trace()
+    
     if dims == 1:
         return nn.AvgPool1d(*args, **kwargs)
     elif dims == 2:
@@ -275,28 +278,34 @@ def avg_pool_nd(dims, *args, **kwargs):
         return nn.AvgPool3d(*args, **kwargs)
     raise ValueError(f"unsupported dimensions: {dims}")
 
-def image_crop_8x8(image):
+def image_crop_32x32(image):
     B, C, H, W = image.size()
-    H8 = (H // 8) * 8
-    W8 = (W // 8) * 8
-    if H8 != H or W8 != W:
-        top = (H % 8) // 2
-        left = (W % 8) // 2
-        image = image[:, 0:3, top : H8 + top, left : W8 + left]
+    H32 = (H // 32)
+    W32 = (W // 32)
+    if 32 * H32 != H or 32 * W32 != W:
+        image = F.interpolate(image, size=((H32 + 1)*32, (W32 + 1)*32), mode="bilinear", align_corners=False)
+
+    # H32 = (H // 32) * 32
+    # W32 = (W // 32) * 32
+    # if H32 != H or W32 != W:
+    #     top = (H % 32) // 2
+    #     left = (W % 32) // 2
+    #     image = image[:, 0:3, top : H32 + top, left : W32 + left]
+
     return image
 
 
 def load_image(filename):
     image = Image.open(filename).convert("RGB")
     image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
-    return image_crop_8x8(image)
+    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
+    return image_crop_32x32(image)
 
 
 def load_clip_vision_image(filename):
     image = Image.open(filename).convert("RGB")
     image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2) # BxCxHxW
+    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
     image = F.interpolate(image, size=(224, 224), mode="bilinear", align_corners=False)
     # image normal
     image = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])(image)
@@ -307,13 +316,13 @@ def load_clip_vision_image(filename):
 
 def load_torch_image(image):
     image = image.astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].permute(0, 3, 1, 2)
-    return image_crop_8x8(image)
-
+    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
+    # image = F.interpolate(image, size=(1024, 1024), mode="bilinear", align_corners=False)
+    return image_crop_32x32(image)
 
 
 if __name__ == "__main__":
     image = torch.randn(2, 3, 1011, 777)
-    pad = image_crop_8x8(image)
+    pad = image_crop_32x32(image)
 
     pdb.set_trace()

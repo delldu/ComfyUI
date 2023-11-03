@@ -210,15 +210,17 @@ class VAE:
             batch_number = int(free_memory / memory_used)
             batch_number = max(1, batch_number)
 
-            pixel_samples = torch.empty((samples_in.shape[0], 3, round(samples_in.shape[2] * 8), round(samples_in.shape[3] * 8)), device="cpu")
+            pixel_samples = torch.empty((samples_in.shape[0], 3, round(samples_in.shape[2] * 8), 
+                round(samples_in.shape[3] * 8)), device="cpu")
             for x in range(0, samples_in.shape[0], batch_number):
                 samples = samples_in[x:x+batch_number].to(self.vae_dtype).to(self.device)
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 # model_forward
                 #   VAEDecode.forward
                 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                pixel_samples[x:x+batch_number] = torch.clamp(
-                    (self.first_stage_model.decode(samples).cpu().float() + 1.0) / 2.0, min=0.0, max=1.0)
+                zout = self.first_stage_model.decode(samples)
+                # tensor [zout] size: [1, 3, 600, 456], min: -1.649717, max: 1.515323, mean: 0.132423
+                pixel_samples[x:x+batch_number] = torch.clamp((zout.cpu().float() + 1.0) / 2.0, min=0.0, max=1.0)
 
 
         except model_management.OOM_EXCEPTION as e:
@@ -245,7 +247,8 @@ class VAE:
             free_memory = model_management.get_free_memory(self.device)
             batch_number = int(free_memory / memory_used)
             batch_number = max(1, batch_number)
-            samples = torch.empty((pixel_samples.shape[0], 4, round(pixel_samples.shape[2] // 8), round(pixel_samples.shape[3] // 8)), device="cpu")
+            samples = torch.empty((pixel_samples.shape[0], 4, round(pixel_samples.shape[2] // 8), 
+                round(pixel_samples.shape[3] // 8)), device="cpu")
             for x in range(0, pixel_samples.shape[0], batch_number):
                 pixels_in = (2. * pixel_samples[x:x+batch_number] - 1.).to(self.vae_dtype).to(self.device)
 

@@ -331,6 +331,7 @@ class CrossAttention(nn.Module):
         context = default(context, x)
         k = self.to_k(context)
         if value is not None:
+            pdb.set_trace()
             v = self.to_v(value)
             del value
         else:
@@ -340,6 +341,7 @@ class CrossAttention(nn.Module):
             # ==> print("---- CrossAttention 1: ", optimized_attention), optimized_attention = attention_pytorch
             out = optimized_attention(q, k, v, self.heads)
         else:
+            pdb.set_trace()
             out = optimized_attention_masked(q, k, v, self.heads, mask)
         return self.to_out(out)
 

@@ -13,7 +13,6 @@ import gradio as gr
 import numpy as np
 
 import torch
-import einops
 
 from SDXL import (
     create_sdxl_base_model,
@@ -29,7 +28,7 @@ import pdb
 # beautiful scenery nature glass bottle landscape, purple galaxy bottle
 
 # create models
-model = create_sdxl_base_model()
+model = create_sdxl_base_model(skip_lora=True, skip_vision=False)
 sample_mode = model.sample_mode
 vae_encode = model.vae_encode
 vae_decode = model.vae_decode
@@ -60,6 +59,8 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024))
         # ==> size: [1, 4, 128, 128], min: -7.33046, max: 9.45929, mean: -0.472631
 
+    pdb.set_trace()
+    
     positive_tensor['text_encoded'].fill_(0.0)
     positive_tensor['pool_encoded'].fill_(0.0)
     negative_tensor['text_encoded'].fill_(0.0)
@@ -78,9 +79,9 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
 
     with torch.no_grad():
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
-        latent_output = vae_decode(sample.cpu())
+        latent_output = vae_decode(sample.cpu()) # VAEDecode
 
-    x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
+    x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 
     return [x_samples[0]]
 
@@ -88,7 +89,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
 block = gr.Blocks().queue()
 with block:
     with gr.Row():
-        gr.Markdown("## SDXL 1.0 Vision Model Demo")
+        gr.Markdown("## SDXL 1.0 Base Vision Model Demo")
     with gr.Row():
         with gr.Column():
             input_image = gr.Image(source='upload', type="numpy", label='Source')

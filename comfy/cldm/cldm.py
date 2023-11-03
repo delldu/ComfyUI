@@ -279,7 +279,6 @@ class ControlNet(nn.Module):
 
     def forward(self, x, hint, timesteps, context, y=None, **kwargs):
         # kwargs --  {}
-
         if os.environ.get('SDXL_DEBUG') is not None:
             todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
             todos.debug.output_var("ControlNet hint", hint)
@@ -312,7 +311,8 @@ class ControlNet(nn.Module):
         h = self.middle_block(h, emb, context)
         outs.append(self.middle_block_out(h, emb, context))
 
-        todos.debug.output_var("ControlNet outs", outs)
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("ControlNet output", outs)        
 
         return outs
 

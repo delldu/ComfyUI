@@ -17,6 +17,7 @@ def broadcast_image_to(tensor, target_batch_size, batched_number):
     if current_batch_size == 1:
         return tensor
 
+    pdb.set_trace()
     per_batch = target_batch_size // batched_number
     tensor = tensor[:per_batch]
 
@@ -86,6 +87,7 @@ class ControlBase:
         out = {'input':[], 'middle':[], 'output': []}
 
         if control_input is not None: # False
+            pdb.set_trace()
             for i in range(len(control_input)):
                 key = 'input'
                 x = control_input[i]
@@ -106,6 +108,7 @@ class ControlBase:
                 x = control_output[i]
                 if x is not None:
                     if self.global_average_pooling:
+                        pdb.set_trace()
                         x = torch.mean(x, dim=(2, 3), keepdim=True).repeat(1, 1, x.shape[2], x.shape[3])
 
                     x *= self.strength
@@ -115,6 +118,7 @@ class ControlBase:
                 out[key].append(x)
                 
         if control_prev is not None: #False
+            pdb.set_trace()
             for x in ['input', 'middle', 'output']:
                 o = out[x]
                 for i in range(len(control_prev[x])):
@@ -132,7 +136,9 @@ class ControlNet(ControlBase):
     def __init__(self, control_model, global_average_pooling=False, device=None):
         super().__init__(device)
         self.control_model = control_model
-        self.control_model_wrapped = comfy.model_patcher.ModelPatcher(self.control_model, load_device=comfy.model_management.get_torch_device(), offload_device=comfy.model_management.unet_offload_device())
+        self.control_model_wrapped = comfy.model_patcher.ModelPatcher(self.control_model, 
+            load_device=comfy.model_management.get_torch_device(), 
+            offload_device=comfy.model_management.unet_offload_device())
         self.global_average_pooling = global_average_pooling
         pdb.set_trace()
 
@@ -150,12 +156,13 @@ class ControlNet(ControlBase):
                     return None
 
         output_dtype = x_noisy.dtype
-        if self.cond_hint is None or x_noisy.shape[2] * 8 != self.cond_hint.shape[2] or x_noisy.shape[3] * 8 != self.cond_hint.shape[3]:
+        if self.cond_hint is None or x_noisy.shape[2] * 8 != self.cond_hint.shape[2] or \
+                                     x_noisy.shape[3] * 8 != self.cond_hint.shape[3]:
             if self.cond_hint is not None:
                 del self.cond_hint
             self.cond_hint = None
-            self.cond_hint = comfy.utils.common_upscale(self.cond_hint_original, x_noisy.shape[3] * 8, x_noisy.shape[2] * 8, 'nearest-exact', "center").to(self.control_model.dtype).to(self.device)
-            # tensor [self.cond_hint] size: [1, 3, 1024, 1024], min: 0.0, max: 1.0, mean: 0.022766, canny_edge
+            self.cond_hint = comfy.utils.common_upscale(self.cond_hint_original, x_noisy.shape[3] * 8, x_noisy.shape[2] * 8, 
+                'nearest-exact', "center").to(self.control_model.dtype).to(self.device)
             
         if x_noisy.shape[0] != self.cond_hint.shape[0]:
             self.cond_hint = broadcast_image_to(self.cond_hint, x_noisy.shape[0], batched_number)
@@ -176,6 +183,9 @@ class ControlNet(ControlBase):
         # y.size() -- [2, 2816]
         # control_prev -- None
         # output_dtype -- torch.float32
+
+        if os.environ.get("SDXL_DEBUG") is not None:
+            todos.debug.output_var("lora_guide", self.cond_hint)
 
         control = self.control_model(x=x_noisy.to(self.control_model.dtype), hint=self.cond_hint, timesteps=t, 
             context=context.to(self.control_model.dtype), y=y)
@@ -203,6 +213,8 @@ class ControlLoraOps:
             self.up = None
             self.down = None
             self.bias = None
+            self.biasx = bias
+            self.dtype = dtype
 
         def forward(self, input):
             if self.up is not None:

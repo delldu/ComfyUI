@@ -10,11 +10,10 @@
 #
 __version__ = "1.0.0"
 
-import os
+# import os
 
 import torch
-import todos
-# from .uni_controlnet import UniControlNet
+import torch.nn as nn
 
 from SDXL.util import (
     DictToClass,
@@ -29,9 +28,7 @@ from SDXL.util import (
     load_diffusion_model_weight,        
 )
 
-# from SDXL.ksampler import (
-#     KSampler,
-# )
+
 from SDXL.model import (
     SDXLBase,
     SDXLRefiner,
@@ -56,6 +53,7 @@ from SDXL.controlnet import (
     load_ctrl_lora_weights,
 )
 
+import todos
 import pdb
 
 # import json
@@ -108,7 +106,7 @@ def get_model(version):
     return model, device
 
 
-def create_sdxl_base_model(skip_loara=True):
+def create_sdxl_base_model(skip_loara=True, skip_vision=True):
     model_version = "base_1.0"
     model_path = "models/sd_xl_base_1.0.safetensors"
     model = DictToClass({
@@ -117,7 +115,7 @@ def create_sdxl_base_model(skip_loara=True):
         "vae_decode": VAEDecode(version=model_version),
         "clip_token": CLIPTextTokenizer(version=model_version),
         "clip_text": CLIPTextEncode(version=model_version),
-        "clip_vision": CLIPVisionEncode(),
+        "clip_vision": nn.Identity() if skip_vision else CLIPVisionEncode(),
     })
     whole_sd = state_dict_load(model_path)
 
@@ -134,15 +132,15 @@ def create_sdxl_base_model(skip_loara=True):
     model.sample_mode = model.sample_mode.half().eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()
 
-    vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
-    model_sd = state_dict_filter(vae_sd, ["encoder.", "quant_conv."], remove_prefix=False)
-    model.vae_encode.load_state_dict(model_sd)
-    # load_vaeencode_model_weight(model.vae_encode, model_path="models/sdxl_vae.safetensors")
+    # vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
+    # model_sd = state_dict_filter(vae_sd, ["encoder.", "quant_conv."], remove_prefix=False)
+    # model.vae_encode.load_state_dict(model_sd)
+    load_vaeencode_model_weight(model.vae_encode, model_path="models/sdxl_vae.safetensors")
     model.vae_encode = model.vae_encode.eval()
 
-    model_sd = state_dict_filter(vae_sd, ["decoder.", "post_quant_conv."], remove_prefix=False)
-    model.vae_decode.load_state_dict(model_sd)
-    # load_vaedecode_model_weight(model.vae_decode, model_path="models/sdxl_vae.safetensors")
+    # model_sd = state_dict_filter(vae_sd, ["decoder.", "post_quant_conv."], remove_prefix=False)
+    # model.vae_decode.load_state_dict(model_sd)
+    load_vaedecode_model_weight(model.vae_decode, model_path="models/sdxl_vae.safetensors")
     model.vae_decode = model.vae_decode.eval()
 
     # model.clip_token load weight by self
@@ -180,15 +178,15 @@ def create_sdxl_refiner_model():
     model.sample_mode = model.sample_mode.eval().cuda()
     # model.sample_mode = model.sample_mode.eval().cuda()
 
-    vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
-    model_sd = state_dict_filter(vae_sd, ["encoder.", "quant_conv."], remove_prefix=False)
-    model.vae_encode.load_state_dict(model_sd)
-    # load_vaeencode_model_weight(model.vae_encode, model_path="models/sdxl_vae.safetensors")
+    # vae_sd = state_dict_filter(whole_sd, ["first_stage_model."], remove_prefix=True)
+    # model_sd = state_dict_filter(vae_sd, ["encoder.", "quant_conv."], remove_prefix=False)
+    # model.vae_encode.load_state_dict(model_sd)
+    load_vaeencode_model_weight(model.vae_encode, model_path="models/sdxl_vae.safetensors")
     model.vae_encode = model.vae_encode.eval()
 
-    model_sd = state_dict_filter(vae_sd, ["decoder.", "post_quant_conv."], remove_prefix=False)
-    model.vae_decode.load_state_dict(model_sd)
-    # load_vaedecode_model_weight(model.vae_decode, model_path="models/sdxl_vae.safetensors")
+    # model_sd = state_dict_filter(vae_sd, ["decoder.", "post_quant_conv."], remove_prefix=False)
+    # model.vae_decode.load_state_dict(model_sd)
+    load_vaedecode_model_weight(model.vae_decode, model_path="models/sdxl_vae.safetensors")
     model.vae_decode = model.vae_decode.eval()
 
     # model.clip_token load weight by self

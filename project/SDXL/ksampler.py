@@ -1,3 +1,4 @@
+import os
 import math
 import torch
 import torch.nn as nn
@@ -128,22 +129,23 @@ class KSampler(nn.Module):
         ctrl2 = {'input':[], 'middle':[], 'output': []} # control output list
 
         if 'lora_guide' in positive_tensor:
+            if os.environ.get("SDXL_DEBUG") is not None:
+                todos.debug.output_var("lora_guide", positive_tensor['lora_guide'])
+
             h2 = positive_tensor['lora_guide']
             with torch.no_grad():
                 control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
 
-            # The following come from function control_merge
             weight = 1.0
             if 'lora_weight' in positive_tensor: # xxxx9999
                 weight = positive_tensor['lora_weight']
 
+            # The following come from function control_merge
             for i in range(len(control_output)):
                 if i == (len(control_output) - 1):
                     key = 'middle'
-                    index = 0
                 else:
                     key = 'output'
-                    index = i
                 ctrl2[key].append(control_output[i] * weight)
 
         with torch.no_grad():
@@ -180,7 +182,6 @@ class KSampler(nn.Module):
         todos.debug.output_var("latent_image", latent_image)
         print("-" * 120)
 
-
         sigmas = self.set_steps(steps, denoise).to(latent_image.device) # steps, denois ==> sigmas
 
         noise = prepare_noise(latent_image, seed)
@@ -203,9 +204,9 @@ class KSampler(nn.Module):
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        # sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
         # sample = self.sample_dpm_2_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
         latent_output = self.process_latent_out(sample) # sample
 
@@ -249,7 +250,7 @@ class KSampler(nn.Module):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             # model_forward
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale)
 
             d = to_d(latent_noise, sigma_hat, denoised)
             dt = sigmas[i + 1] - sigma_hat

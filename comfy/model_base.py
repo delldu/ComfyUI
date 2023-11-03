@@ -220,7 +220,7 @@ class SDXL(BaseModel):
         # width, height -- 1024
 
         clip_pooled = sdxl_pooled(kwargs, self.noise_augmentor)
-        
+
         width = kwargs.get("width", 768)
         height = kwargs.get("height", 768)
         crop_w = kwargs.get("crop_w", 0)

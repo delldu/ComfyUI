@@ -13,7 +13,6 @@ import gradio as gr
 import numpy as np
 
 import torch
-import einops
 
 from SDXL import (
     create_sdxl_refiner_model,
@@ -68,7 +67,7 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
         latent_output = vae_decode(sample.cpu())
 
-    x_samples = (einops.rearrange(latent_output, 'b c h w -> b h w c') * 255.0).numpy().clip(0, 255).astype(np.uint8)
+    x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 
     return [x_samples[0]]
 

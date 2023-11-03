@@ -85,6 +85,8 @@ class Upsample(nn.Module):
         if use_conv:
             # ==> pdb.set_trace()
             self.conv = operations.conv_nd(dims, self.channels, self.out_channels, 3, padding=padding, dtype=dtype, device=device)
+        else:
+            pdb.set_trace()
 
     def forward(self, x, output_shape=None):
         assert x.shape[1] == self.channels
@@ -126,6 +128,7 @@ class Downsample(nn.Module):
                 dims, self.channels, self.out_channels, 3, stride=stride, padding=padding, dtype=dtype, device=device
             )
         else:
+            pdb.set_trace()
             assert self.channels == self.out_channels
             self.op = avg_pool_nd(dims, kernel_size=stride, stride=stride)
 
@@ -135,20 +138,6 @@ class Downsample(nn.Module):
 
 
 class ResBlock(TimestepBlock):
-    """
-    A residual block that can optionally change the number of channels.
-    :param channels: the number of input channels.
-    :param emb_channels: the number of timestep embedding channels.
-    :param dropout: the rate of dropout.
-    :param out_channels: if specified, the number of out channels.
-    :param use_conv: if True and out_channels is specified, use a spatial
-        convolution instead of a smaller 1x1 convolution to change the
-        channels in the skip connection.
-    :param dims: determines if the signal is 1D, 2D, or 3D.
-    :param up: if True, use this block for upsampling.
-    :param down: if True, use this block for downsampling.
-    """
-
     def __init__(
         self,
         channels,
@@ -207,6 +196,7 @@ class ResBlock(TimestepBlock):
                 dims, channels, self.out_channels, 3, padding=1, dtype=dtype, device=device
             )
         else:
+            # ==> pdb.set_trace()
             self.skip_connection = operations.conv_nd(dims, channels, self.out_channels, 1, dtype=dtype, device=device)
 
 
@@ -246,7 +236,6 @@ class UNetModel(nn.Module):
     sd_xl_base.yaml:    
         adm_in_channels: 2816
         num_classes: sequential
-        use_checkpoint: False
         in_channels: 4
         out_channels: 4
         model_channels: 320
@@ -254,8 +243,6 @@ class UNetModel(nn.Module):
         num_res_blocks: 2
         channel_mult: [1, 2, 4]
         num_head_channels: 64
-        use_spatial_transformer: True
-        use_linear_in_transformer: True
         transformer_depth: [0, 2, 10]  # note: the first is unused (due to attn_res starting at 2) 32, 16, 8 --> 64, 32, 16
         context_dim: 2048
         spatial_transformer_attn_type: softmax-xformers
@@ -265,7 +252,6 @@ class UNetModel(nn.Module):
       params:
         adm_in_channels: 2560
         num_classes: sequential
-        use_checkpoint: False
         in_channels: 4
         out_channels: 4
         model_channels: 384
@@ -273,8 +259,6 @@ class UNetModel(nn.Module):
         num_res_blocks: 2
         channel_mult: [1, 2, 4, 4]
         num_head_channels: 64
-        use_spatial_transformer: True
-        use_linear_in_transformer: True
         transformer_depth: [0, 4, 4, 0]
         context_dim: 1280
         spatial_transformer_attn_type: softmax-xformers
@@ -284,23 +268,20 @@ class UNetModel(nn.Module):
     def __init__(
         self,
         version,
-        image_size=32,
+        # image_size=32,
         in_channels=4,
         model_channels=320,
         out_channels=4,
         num_res_blocks=2,
         attention_resolutions=[2, 4],
-        dropout=0,
+        dropout=0.0,
         channel_mult=(1, 2, 4),
         conv_resample=True,
-        dims=2,
+        dims=2, # 2D
         use_fp16=True,
-        num_heads=-1,
         num_head_channels=64,
-        use_spatial_transformer=True,    # custom transformer support
         transformer_depth=[0, 2, 10],    # custom transformer support
         context_dim=2048,                # custom transformer support
-        use_linear_in_transformer=True,
         adm_in_channels=2816,
         transformer_depth_middle=10,
         device=None,
@@ -323,31 +304,18 @@ class UNetModel(nn.Module):
             context_dim = 1280
             transformer_depth_middle = 4
 
-        assert use_spatial_transformer == True, "use_spatial_transformer has to be true"
-        if use_spatial_transformer:
-            assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
-
-        if context_dim is not None:
-            assert use_spatial_transformer, 'Fool!! You forgot to use the spatial transformer for your cross-attention conditioning...'
 
         self.context_dim = context_dim
-
-        self.image_size = image_size
+        # self.image_size = image_size
         self.in_channels = in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
-        if isinstance(transformer_depth, int):
-            transformer_depth = len(channel_mult) * [transformer_depth]
-        if transformer_depth_middle is None:
-            transformer_depth_middle =  transformer_depth[-1]
         self.num_res_blocks = len(channel_mult) * [num_res_blocks]
-
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
         self.channel_mult = channel_mult
         self.conv_resample = conv_resample
         self.dtype = torch.float16 if use_fp16 else torch.float32
-        self.num_heads = num_heads
         self.num_head_channels = num_head_channels
 
         time_embed_dim = model_channels * 4
@@ -393,7 +361,7 @@ class UNetModel(nn.Module):
 
                     layers.append(SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth[level], context_dim=context_dim,
-                            disable_self_attn=False, use_linear=use_linear_in_transformer,
+                            use_linear=True,
                             dtype=self.dtype, device=device, operations=operations
                         )
                     )
@@ -403,9 +371,8 @@ class UNetModel(nn.Module):
                 out_ch = ch
                 self.input_blocks.append(
                     TimestepEmbedSequential(
-                        Downsample(
-                            ch, conv_resample, dims=dims, out_channels=out_ch, dtype=self.dtype, device=device, operations=operations
-                        )
+                        Downsample(ch, conv_resample, dims=dims, out_channels=out_ch, dtype=self.dtype,
+                            device=device, operations=operations)
                     )
                 )
                 ch = out_ch
@@ -423,7 +390,7 @@ class UNetModel(nn.Module):
             ),
             SpatialTransformer(  # always uses a self-attn
                             ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
-                            disable_self_attn=False, use_linear=use_linear_in_transformer,
+                            use_linear=True,
                             dtype=self.dtype, device=device, operations=operations
                         ),
             ResBlock(ch, time_embed_dim, dropout,
@@ -455,7 +422,7 @@ class UNetModel(nn.Module):
                     layers.append(
                         SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth[level], context_dim=context_dim,
-                            disable_self_attn=False, use_linear=use_linear_in_transformer,
+                            use_linear=True,
                             dtype=self.dtype, device=device, operations=operations
                         )
                     )
@@ -488,13 +455,12 @@ class UNetModel(nn.Module):
             todos.debug.output_var("UNetModel timesteps", timesteps)
             todos.debug.output_var("UNetModel context", context)
             todos.debug.output_var("UNetModel y", y)
-            todos.debug.output_var("UNetModel control", control)
+            todos.debug.output_var("UNetModel control['input']", control['input'])
+            todos.debug.output_var("UNetModel control['middle']", control['middle'])
+            todos.debug.output_var("UNetModel control['output']", control['output'])
 
-
-        transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0
-        transformer_patches = transformer_options.get("patches", {})
-        # transformer_options -- {'cond_or_uncond': [1, 0], 'original_shape': [2, 4, 75, 57], 'current_index': 0}
+        # transformer_patches = transformer_options.get("patches", {})
 
         assert (y is not None), "must specify y"
         hs = []
@@ -531,12 +497,18 @@ class UNetModel(nn.Module):
             if len(hs) > 0:
                 output_shape = hs[-1].shape
             else:
+                # ==> pdb.set_trace()
                 output_shape = None
             h = forward_timestep_embed(module, h, emb, context, transformer_options, output_shape)
 
         # h.dtype -- torch.float16
         # h = h.type(x.dtype)
-        return self.out(h)
+        output = self.out(h)
+
+        if os.environ.get('SDXL_DEBUG') is not None:
+            todos.debug.output_var("UNetModel output", output)
+
+        return output
 
 
 def sdxl_unet_model():
