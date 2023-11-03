@@ -73,43 +73,29 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
 
 class ControlLoraOps:
     class Linear(nn.Module):
-        def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                    device=None, dtype=None) -> None:
+        def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
             # factory_kwargs = {'device': device, 'dtype': dtype}
             super().__init__()
             self.dtype = torch.float16
             self.in_features = in_features
             self.out_features = out_features
-            self.weight = nn.Parameter(torch.zeros(out_features, in_features)) 
-            self.bias = nn.Parameter(torch.zeros(out_features)) # must be
+            self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False) 
+            self.bias = nn.Parameter(torch.zeros(out_features), requires_grad=False)
             self.up = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
             self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
 
         def forward(self, input):
             input = input.to(self.dtype)
-            # if self.up is not None:
-            #     return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
-            #             self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
-            # else:
-            #     pdb.set_trace()
-            #     return F.linear(input, self.weight.to(input.device), self.bias)
             return F.linear(input, self.weight + torch.mm(self.up, self.down), self.bias)
-
 
         def __repr__(self):
             s = f"Linear(in_features={self.in_features}, out_features={self.out_features}"
-            if self.weight is not None:
-                s += f", weight=Parameter({list(self.weight.size())})"
-            if self.bias is not None:
-                s += f", bias=Parameter({list(self.bias.size())})"
-            if self.up is not None:
-                s += f", up=Parameter({list(self.up.size())})"
-            if self.down is not None:
-                s += f", down=Parameter({list(self.up.size())})"
+            s += f", weight=Parameter({list(self.weight.size())})"
+            s += f", bias=Parameter({list(self.bias.size())})"
+            s += f", up=Parameter({list(self.up.size())})"
+            s += f", down=Parameter({list(self.up.size())})"
             s += ")"
-
             return s
-
 
     class Conv2d(nn.Module):
         def __init__(self,
@@ -123,7 +109,8 @@ class ControlLoraOps:
             bias=True,
             padding_mode='zeros',
             device=None,
-            dtype=None
+            dtype=None,
+            up_down=True,
         ):
             super().__init__()
             self.in_channels = in_channels
@@ -137,30 +124,29 @@ class ControlLoraOps:
             self.groups = groups
             self.padding_mode = padding_mode
 
-            self.weight = None
-
-            self.biasx = bias
-            self.bias = nn.Parameter(torch.zeros(out_channels)) # must be
-
-            self.up = None # self.up <class 'torch.nn.parameter.Parameter'>
-            self.down = None
+            self.weight = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
+            self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
+            if up_down:
+                self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
+                self.down = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
+            else:
+                self.up = None
+                self.down = None
 
         def forward(self, input):
             if self.up is not None:
-                return F.conv2d(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
-                    self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), 
-                    self.bias.to(input.device), self.stride, self.padding, self.dilation, self.groups)
+                return F.conv2d(input, 
+                    self.weight + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape), 
+                    self.bias, self.stride, self.padding, self.dilation, self.groups)
             else:
-                return F.conv2d(input, self.weight.to(input.device), self.bias.to(input.device), self.stride, self.padding, 
-                    self.dilation, self.groups)
+                return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
 
         def __repr__(self):
-            s = f"Conv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
-            s += f", kernel_size={self.kernel_size}, stride={self.stride}, bias={self.biasx}"
-            if self.weight is not None:
-                s += f", weight=Parameter({list(self.weight.size())})"
-            if self.bias is not None:
-                s += f", bias=Parameter({list(self.bias.size())})"
+            s = f"ControlLoraOps Conv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
+            s += f", kernel_size={self.kernel_size}, stride={self.stride}"
+            s += f", weight=Parameter({list(self.weight.size())})"
+            s += f", bias=Parameter({list(self.bias.size())})"
             if self.up is not None:
                 s += f", up=Parameter({list(self.up.size())})"
             if self.down is not None:
@@ -171,7 +157,6 @@ class ControlLoraOps:
     def conv_nd(self, dims, *args, **kwargs):
         if dims == 2:
             return self.Conv2d(*args, **kwargs)
-            # return nn.Conv2d(*args, **kwargs)
         else:
             raise ValueError(f"unsupported dimensions: {dims}")
 
@@ -240,21 +225,21 @@ class ControlNet(nn.Module):
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels, operations=operations)])
 
         self.input_hint_block = TimestepEmbedSequential(
-                    operations.conv_nd(dims, hint_channels, 16, 3, padding=1),
+                    operations.conv_nd(dims, hint_channels, 16, 3, padding=1, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 16, 16, 3, padding=1),
+                    operations.conv_nd(dims, 16, 16, 3, padding=1, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 16, 32, 3, padding=1, stride=2),
+                    operations.conv_nd(dims, 16, 32, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
                     operations.conv_nd(dims, 32, 32, 3, padding=1),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 32, 96, 3, padding=1, stride=2),
+                    operations.conv_nd(dims, 32, 96, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
                     operations.conv_nd(dims, 96, 96, 3, padding=1),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 96, 256, 3, padding=1, stride=2),
+                    operations.conv_nd(dims, 96, 256, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
-                    zero_module(operations.conv_nd(dims, 256, model_channels, 3, padding=1))
+                    zero_module(operations.conv_nd(dims, 256, model_channels, 3, padding=1, up_down=False))
         )
 
         input_block_chans = [model_channels]
@@ -320,9 +305,9 @@ class ControlNet(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-
     def make_zero_conv(self, channels, operations=None):
-        return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0)))
+        # no up/down
+        return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0, up_down=False)))
 
     def forward(self, x, hint, timesteps, context, y=None):
         if os.environ.get('SDXL_DEBUG') is not None:

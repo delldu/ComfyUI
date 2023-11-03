@@ -204,9 +204,9 @@ class KSampler(nn.Module):
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # sample = self.sample_euler_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        # sample = self.sample_euler(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
         # sample = self.sample_dpm_2_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
-        # sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
+        sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
         latent_output = self.process_latent_out(sample) # sample
 
