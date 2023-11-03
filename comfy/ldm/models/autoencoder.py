@@ -8,6 +8,8 @@ from comfy.ldm.modules.distributions.distributions import DiagonalGaussianDistri
 
 from comfy.ldm.util import instantiate_from_config
 from comfy.ldm.modules.ema import LitEma
+import todos
+import pdb
 
 class DiagonalGaussianRegularizer(torch.nn.Module):
     def __init__(self, sample: bool = True):
@@ -143,6 +145,8 @@ class AutoencodingEngine(AbstractAutoencoder):
     ) -> Tuple[torch.Tensor, torch.Tensor, dict]:
         z, reg_log = self.encode(x, return_reg_log=True)
         dec = self.decode(z, **additional_decode_kwargs)
+        pdb.set_trace()
+
         return z, dec, reg_log
 
 
@@ -161,11 +165,15 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
             },
             **kwargs,
         )
+        # embed_dim = 4
+        # kwargs = {'regularizer_config': {'target': 'comfy.ldm.models.autoencoder.DiagonalGaussianRegularizer'}}
+
         self.quant_conv = torch.nn.Conv2d(
             (1 + ddconfig["double_z"]) * ddconfig["z_channels"],
             (1 + ddconfig["double_z"]) * embed_dim,
             1,
-        )
+        ) # ddconfig["double_z"] -- True ==> 1 + ddconfig["double_z"] == 2
+
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.embed_dim = embed_dim
 
@@ -176,10 +184,12 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
     def encode(
         self, x: torch.Tensor, return_reg_log: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, dict]]:
-        if self.max_batch_size is None:
+        if self.max_batch_size is None: # True
             z = self.encoder(x)
             z = self.quant_conv(z)
         else:
+            pdb.set_trace()
+
             N = x.shape[0]
             bs = self.max_batch_size
             n_batches = int(math.ceil(N / bs))
@@ -196,10 +206,11 @@ class AutoencodingEngineLegacy(AutoencodingEngine):
         return z
 
     def decode(self, z: torch.Tensor, **decoder_kwargs) -> torch.Tensor:
-        if self.max_batch_size is None:
+        if self.max_batch_size is None: # True
             dec = self.post_quant_conv(z)
             dec = self.decoder(dec, **decoder_kwargs)
         else:
+            pdb.set_trace()
             N = z.shape[0]
             bs = self.max_batch_size
             n_batches = int(math.ceil(N / bs))

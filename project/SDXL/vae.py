@@ -82,7 +82,6 @@ class VAEEncode(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-
     def forward(self, x):
         x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
         h = self.encoder(x)
@@ -100,19 +99,8 @@ class VAEEncode(nn.Module):
 class VAEDecode(nn.Module):
     def __init__(self, version, embed_dim=4, z_channels=4):
         super().__init__()
-        # ddconfig = {
-        #     "z_channels": 4,
-        #     "resolution": 256,
-        #     "in_channels": 3,
-        #     "out_ch": 3,
-        #     "ch": 128,
-        #     "ch_mult": [1, 2, 4, 4],
-        #     "num_res_blocks": 2,
-        #     "dropout": 0.0,
-        # }
         self.version = version
         self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
-        # self.decoder = Decoder(**ddconfig)  # model size 190 M
         self.decoder = Decoder()  # model size 190 M
 
         for param in self.parameters():
@@ -130,7 +118,7 @@ class VAEDecode(nn.Module):
         return out
 
 def nonlinearity(x):
-    return x * torch.sigmoid(x)
+    return x * torch.sigmoid(x) # swish, F.silu
 
 
 def Normalize(in_channels, num_groups=32):
@@ -166,6 +154,7 @@ class ResnetBlock(nn.Module):
         out_channels = in_channels if out_channels is None else out_channels
         self.out_channels = out_channels
 
+        self.swish = nn.SiLU()
         self.norm1 = Normalize(in_channels)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
@@ -180,11 +169,11 @@ class ResnetBlock(nn.Module):
     def forward(self, x):
         h = x
         h = self.norm1(h)
-        h = nonlinearity(h)
+        h = self.swish(h) # nonlinearity(h)
         h = self.conv1(h)
 
         h = self.norm2(h)
-        h = nonlinearity(h)
+        h = self.swish(h) # nonlinearity(h)
         h = self.dropout(h)
         h = self.conv2(h)
 

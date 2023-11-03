@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import SDXL.util
+
 from SDXL.util import (
     zero_module,
     timestep_embedding,
@@ -32,7 +34,7 @@ def update_model_weight(obj, key, value):
         for name in attrs[:-1]:
             obj = getattr(obj, name)
 
-        setattr(obj, attrs[-1], torch.nn.Parameter(value))
+        setattr(obj, attrs[-1], nn.Parameter(value))
     except:
         # print(f"update model weight {key} exception !!!")
         # skip output_blocks.*, out.* 
@@ -75,32 +77,42 @@ class ControlLoraOps:
                     device=None, dtype=None) -> None:
             # factory_kwargs = {'device': device, 'dtype': dtype}
             super().__init__()
-            # in_features = 320
-            # out_features = 1280
-            # bias = True
-            self.biasx = bias
             self.dtype = torch.float16
             self.in_features = in_features
             self.out_features = out_features
-            self.weight = None
-            self.up = None
-            self.down = None
-            self.bias = None
+            self.weight = nn.Parameter(torch.zeros(out_features, in_features)) 
+            self.bias = nn.Parameter(torch.zeros(out_features)) # must be
+            self.up = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
+            self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
 
         def forward(self, input):
             input = input.to(self.dtype)
-            if self.up is not None:
-                return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
-                        self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
-            else:
-                return F.linear(input, self.weight.to(input.device), self.bias)
+            # if self.up is not None:
+            #     return F.linear(input, self.weight.to(input.device) + (torch.mm(self.up.flatten(start_dim=1), 
+            #             self.down.flatten(start_dim=1))).reshape(self.weight.shape).type(input.dtype), self.bias)
+            # else:
+            #     pdb.set_trace()
+            #     return F.linear(input, self.weight.to(input.device), self.bias)
+            return F.linear(input, self.weight + torch.mm(self.up, self.down), self.bias)
+
 
         def __repr__(self):
-            return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
+            s = f"Linear(in_features={self.in_features}, out_features={self.out_features}"
+            if self.weight is not None:
+                s += f", weight=Parameter({list(self.weight.size())})"
+            if self.bias is not None:
+                s += f", bias=Parameter({list(self.bias.size())})"
+            if self.up is not None:
+                s += f", up=Parameter({list(self.up.size())})"
+            if self.down is not None:
+                s += f", down=Parameter({list(self.up.size())})"
+            s += ")"
+
+            return s
+
 
     class Conv2d(nn.Module):
-        def __init__(
-            self,
+        def __init__(self,
             in_channels,
             out_channels,
             kernel_size,
@@ -114,7 +126,7 @@ class ControlLoraOps:
             dtype=None
         ):
             super().__init__()
-            # self.in_channels = in_channels
+            self.in_channels = in_channels
             self.out_channels = out_channels
             self.kernel_size = kernel_size
             self.stride = stride
@@ -126,8 +138,11 @@ class ControlLoraOps:
             self.padding_mode = padding_mode
 
             self.weight = None
-            self.bias = None
-            self.up = None
+
+            self.biasx = bias
+            self.bias = nn.Parameter(torch.zeros(out_channels)) # must be
+
+            self.up = None # self.up <class 'torch.nn.parameter.Parameter'>
             self.down = None
 
         def forward(self, input):
@@ -138,6 +153,20 @@ class ControlLoraOps:
             else:
                 return F.conv2d(input, self.weight.to(input.device), self.bias.to(input.device), self.stride, self.padding, 
                     self.dilation, self.groups)
+
+        def __repr__(self):
+            s = f"Conv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
+            s += f", kernel_size={self.kernel_size}, stride={self.stride}, bias={self.biasx}"
+            if self.weight is not None:
+                s += f", weight=Parameter({list(self.weight.size())})"
+            if self.bias is not None:
+                s += f", bias=Parameter({list(self.bias.size())})"
+            if self.up is not None:
+                s += f", up=Parameter({list(self.up.size())})"
+            if self.down is not None:
+                s += f", down=Parameter({list(self.up.size())})"
+            s += ")"
+            return s
 
     def conv_nd(self, dims, *args, **kwargs):
         if dims == 2:
@@ -167,7 +196,7 @@ class ControlNet(nn.Module):
         adm_in_channels=2816,
         transformer_depth_middle=10,
         device=None,
-        operations=ControlLoraOps(),
+        operations=ControlLoraOps(), #SDXL.util
     ):
         super().__init__()
         # operations = <comfy.controlnet.ControlLoraOps object>
@@ -187,9 +216,9 @@ class ControlNet(nn.Module):
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
-            operations.Linear(model_channels, time_embed_dim, dtype=self.dtype, device=device),
+            operations.Linear(model_channels, time_embed_dim, dtype=self.dtype, device=device), # 320, 1280, up=1280, 128
             nn.SiLU(),
-            operations.Linear(time_embed_dim, time_embed_dim, dtype=self.dtype, device=device),
+            operations.Linear(time_embed_dim, time_embed_dim, dtype=self.dtype, device=device), # 1280, 1280, up=1280, 128
         )
 
         assert adm_in_channels is not None

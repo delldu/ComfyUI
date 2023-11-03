@@ -76,7 +76,8 @@ class Upsample(nn.Module):
                  upsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
+    def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, 
+        operations=SDXL.util):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
@@ -115,7 +116,8 @@ class Downsample(nn.Module):
                  downsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, operations=SDXL.util):
+    def __init__(self, channels, use_conv, dims=2, out_channels=None, padding=1, dtype=None, device=None, 
+        operations=SDXL.util):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels

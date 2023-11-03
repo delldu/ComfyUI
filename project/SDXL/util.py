@@ -190,7 +190,7 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 device=None, dtype=torch.float32) -> None:
+                 device=None, dtype=torch.float16) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(Linear, self).__init__()
         self.biasx = bias
@@ -208,11 +208,18 @@ class Linear(nn.Module):
         return F.linear(input, self.weight, self.bias)
 
     def __repr__(self):
-        return f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}, dtype={self.dtype})"
+        S = f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}"
+        if self.weight is not None:
+            s += f", weight=Parameter({list(self.weight.size())})"
+        if self.bias is not None:
+            s += f", bias=Parameter({list(self.bias.size())})"
+        s += ")"
 
-class Conv2d(torch.nn.Conv2d):
-    def reset_parameters(self):
-        return None
+# class Conv2d(torch.nn.Conv2d):
+#     def reset_parameters(self):
+#         return None
+
+Conv2d=nn.Conv2d
 
 def conv_nd(dims, *args, **kwargs):
     if dims == 2:
@@ -293,6 +300,18 @@ def image_crop_32x32(image):
     #     image = image[:, 0:3, top : H32 + top, left : W32 + left]
 
     return image
+
+# def image_crop_32x32(image):
+#     B, C, H, W = image.size()
+
+#     H32 = (H // 8) * 8
+#     W32 = (W // 8) * 8
+#     if H32 != H or W32 != W:
+#         top = (H % 8) // 2
+#         left = (W % 8) // 2
+#         image = image[:, 0:3, top : H32 + top, left : W32 + left]
+
+#     return image
 
 
 def load_image(filename):
