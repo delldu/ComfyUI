@@ -20,10 +20,12 @@ import numpy as np
 
 import pdb
 
+
 class DictToClass(object):
     def __init__(self, _obj):
         if _obj:
             self.__dict__.update(_obj)
+
 
 def state_dict_load(model_path):
     cdir = os.path.dirname(__file__)
@@ -40,9 +42,10 @@ def state_dict_load(model_path):
     _, extension = os.path.splitext(checkpoint)
     if extension.lower() == ".safetensors":
         import safetensors.torch
-        state_dict = safetensors.torch.load_file(checkpoint, device='cpu')
+
+        state_dict = safetensors.torch.load_file(checkpoint, device="cpu")
     else:
-        state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
+        state_dict = torch.load(checkpoint, map_location=torch.device("cpu"))
     return state_dict
 
 
@@ -65,10 +68,16 @@ def state_dict_key_replace(state_dict, keys_to_replace):
             state_dict[keys_to_replace[x]] = state_dict.pop(x)
     return state_dict
 
+
 def state_dict_prefix_replace(state_dict, replace_prefix):
     out = state_dict
     for rp in replace_prefix:
-        replace = list(map(lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp):])), filter(lambda a: a.startswith(rp), state_dict.keys())))
+        replace = list(
+            map(
+                lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp) :])),
+                filter(lambda a: a.startswith(rp), state_dict.keys()),
+            )
+        )
         for x in replace:
             w = state_dict.pop(x[0])
             out[x[1]] = w
@@ -112,7 +121,7 @@ def transformers_convert(sd, prefix_from, prefix_to, number):
                 for x in range(3):
                     p = ["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"]
                     k_to = "{}encoder.layers.{}.{}.{}".format(prefix_to, resblock, p[x], y)
-                    sd[k_to] = weights[shape_from*x:shape_from*(x + 1)]
+                    sd[k_to] = weights[shape_from * x : shape_from * (x + 1)]
     return sd
 
 
@@ -121,7 +130,9 @@ def base_clip_text_state_dict(state_dict):
     replace_prefix = {}
 
     replace_prefix["conditioner.embedders.0.transformer.text_model"] = "cond_stage_model.clip_l.transformer.text_model"
-    state_dict = transformers_convert(state_dict, "conditioner.embedders.1.model.", "cond_stage_model.clip_g.transformer.text_model.", 32)
+    state_dict = transformers_convert(
+        state_dict, "conditioner.embedders.1.model.", "cond_stage_model.clip_g.transformer.text_model.", 32
+    )
     keys_to_replace["conditioner.embedders.1.model.text_projection"] = "cond_stage_model.clip_g.text_projection"
     keys_to_replace["conditioner.embedders.1.model.logit_scale"] = "cond_stage_model.clip_g.logit_scale"
 
@@ -137,7 +148,9 @@ def refiner_clip_text_state_dict(state_dict):
     keys_to_replace = {}
     replace_prefix = {}
 
-    state_dict = transformers_convert(state_dict, "conditioner.embedders.0.model.", "cond_stage_model.clip_g.transformer.text_model.", 32)
+    state_dict = transformers_convert(
+        state_dict, "conditioner.embedders.0.model.", "cond_stage_model.clip_g.transformer.text_model.", 32
+    )
     keys_to_replace["conditioner.embedders.0.model.text_projection"] = "cond_stage_model.clip_g.text_projection"
     keys_to_replace["conditioner.embedders.0.model.logit_scale"] = "cond_stage_model.clip_g.logit_scale"
     state_dict = state_dict_key_replace(state_dict, keys_to_replace)
@@ -153,7 +166,7 @@ def load_base_clip_text_model_weight(model, model_path="models/sd_xl_base_1.0.sa
     if len(m) > 0:
         print(f"Load weight from {model_path} missing keys: ", m)
     if len(u) > 0:
-        print(f"Load weight from {model_path} leftover keys: ", u)        
+        print(f"Load weight from {model_path} leftover keys: ", u)
 
 
 def load_refiner_clip_text_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
@@ -174,7 +187,7 @@ def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
 def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
     state_dict = state_dict_load(model_path)
     state_dict.pop("model_ema.decay")
-    state_dict.pop("model_ema.num_updates")    
+    state_dict.pop("model_ema.num_updates")
 
     model.load_state_dict(state_dict)
 
@@ -187,17 +200,20 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 
 # -------------------------
 
+
 def count_params(model, verbose=False):
     total_params = sum(p.numel() for p in model.parameters())
     if verbose:
         print(f"{model.__class__.__name__} has {total_params*1.e-6:.2f} M params.")
     return total_params
 
-def make_beta_schedule(n_timestep:int, linear_start:float =1e-4, linear_end:float =2e-2):
-    betas = torch.linspace(linear_start ** 0.5, linear_end ** 0.5, n_timestep, dtype=torch.float64) ** 2
+
+def make_beta_schedule(n_timestep: int, linear_start: float = 1e-4, linear_end: float = 2e-2):
+    betas = torch.linspace(linear_start**0.5, linear_end**0.5, n_timestep, dtype=torch.float64) ** 2
     return betas.numpy()
 
-def timestep_embedding(timesteps, dim: int, max_period: int=10000):
+
+def timestep_embedding(timesteps, dim: int, max_period: int = 10000):
     """
     Create sinusoidal timestep embeddings.
     :param timesteps: a 1-D Tensor of N indices, one per batch element.
@@ -207,9 +223,7 @@ def timestep_embedding(timesteps, dim: int, max_period: int=10000):
     :return: an [N x dim] Tensor of positional embeddings.
     """
     half = dim // 2
-    freqs = torch.exp(
-        -math.log(max_period) * torch.arange(start=0, end=half) / half
-    ).to(device=timesteps.device)
+    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half) / half).to(device=timesteps.device)
     args = timesteps[:, None] * freqs[None]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     if dim % 2:
@@ -225,12 +239,13 @@ def zero_module(module):
         p.detach().zero_()
     return module
 
+
 def image_crop_32x32(image):
     B, C, H, W = image.size()
-    H32 = (H // 32)
-    W32 = (W // 32)
+    H32 = H // 32
+    W32 = W // 32
     if 32 * H32 != H or 32 * W32 != W:
-        image = F.interpolate(image, size=((H32 + 1)*32, (W32 + 1)*32), mode="bilinear", align_corners=False)
+        image = F.interpolate(image, size=((H32 + 1) * 32, (W32 + 1) * 32), mode="bilinear", align_corners=False)
 
     return image
 
@@ -238,24 +253,24 @@ def image_crop_32x32(image):
 def load_image(filename):
     image = Image.open(filename).convert("RGB")
     image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
+    image = torch.from_numpy(image)[None,].movedim(-1, 1)  # permute(0, 3, 1, 2) ==> BxCxHxW
     return image_crop_32x32(image)
 
 
 def load_clip_vision_image(filename):
     image = Image.open(filename).convert("RGB")
     image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
+    image = torch.from_numpy(image)[None,].movedim(-1, 1)  # permute(0, 3, 1, 2) ==> BxCxHxW
     image = F.interpolate(image, size=(224, 224), mode="bilinear", align_corners=False)
     # image normal
     image = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])(image)
 
-    return image    
+    return image
 
 
 def load_torch_image(image):
     image = image.astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].movedim(-1, 1) # permute(0, 3, 1, 2) ==> BxCxHxW
+    image = torch.from_numpy(image)[None,].movedim(-1, 1)  # permute(0, 3, 1, 2) ==> BxCxHxW
     # image = F.interpolate(image, size=(1024, 1024), mode="bilinear", align_corners=False)
     return image_crop_32x32(image)
 

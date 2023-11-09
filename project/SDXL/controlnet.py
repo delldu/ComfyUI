@@ -8,7 +8,7 @@
 # ***
 # ************************************************************************************/
 #
-#taken from: https://github.com/lllyasviel/ControlNet and modified
+# taken from: https://github.com/lllyasviel/ControlNet and modified
 import os
 import torch
 import torch.nn as nn
@@ -37,18 +37,19 @@ from typing import Dict, List
 import todos
 import pdb
 
+
 def update_model_weight(obj, key, value):
     try:
         # obj -- ControlNet(...)
         # key -- 'time_embed.0.weight'
-        attrs = key.split(".") # ['time_embed', '0', 'weight']
+        attrs = key.split(".")  # ['time_embed', '0', 'weight']
         for name in attrs[:-1]:
             obj = getattr(obj, name)
 
         setattr(obj, attrs[-1], nn.Parameter(value))
     except:
         # print(f"update model weight {key} exception !!!")
-        # skip output_blocks.*, out.* 
+        # skip output_blocks.*, out.*
         pass
 
 
@@ -56,7 +57,7 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
-    unet_path="models/sd_xl_base_1.0.safetensors"
+    unet_path = "models/sd_xl_base_1.0.safetensors"
     unet_checkpoint = unet_path if cdir == "" else cdir + "/" + unet_path
 
     if os.path.exists(checkpoint) and os.path.exists(unet_checkpoint):
@@ -75,7 +76,7 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
             if k not in {"lora_controlnet"}:
                 update_model_weight(model, k, lora_weight[k])
             else:
-                pass # skip "lora_controlnet"
+                pass  # skip "lora_controlnet"
     else:
         print("-" * 32, "Warnning", "-" * 32)
         print(f"model weight file '{checkpoint}' not exist !!!")
@@ -87,10 +88,10 @@ class ControlLoraOps:
             super().__init__()
             self.in_features = in_features
             self.out_features = out_features
-            self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False) 
+            self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False)
             self.bias = nn.Parameter(torch.zeros(out_features), requires_grad=False)
-            self.up = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
-            self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
+            self.up = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False)
+            self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False)
 
         def forward(self, input):
             return F.linear(input, self.weight + torch.mm(self.up, self.down), self.bias)
@@ -104,8 +105,10 @@ class ControlLoraOps:
             s += ")"
             return s
 
+
 class TimestepEmbedConv2d(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         in_channels,
         out_channels,
         kernel_size,
@@ -125,23 +128,33 @@ class TimestepEmbedConv2d(nn.Module):
         self.dilation = dilation
         self.groups = groups
 
-        self.weight = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
+        self.weight = nn.Parameter(
+            torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
+        )
         self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
         if up_down:
             self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
-            self.down = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
+            self.down = nn.Parameter(
+                torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
+            )
         else:
             self.up = None
             self.down = None
 
-    def forward(self, input, emb=None, context=None): # x, [emb, context]
+    def forward(self, input, emb=None, context=None):  # x, [emb, context]
         if self.up is not None:
-            return F.conv2d(input, 
-                self.weight + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape), 
-                self.bias, self.stride, self.padding, self.dilation, self.groups)
+            return F.conv2d(
+                input,
+                self.weight
+                + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape),
+                self.bias,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )
         else:
             return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
 
     def __repr__(self):
         s = f"TimestepEmbedConv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
@@ -155,13 +168,16 @@ class TimestepEmbedConv2d(nn.Module):
         s += ")"
         return s
 
+
 class TimestepEmbedSiLU(nn.SiLU):
-    def forward(self, x, emb, context): # x, [emb, context]
-        return F.silu(x, inplace=self.inplace)        
+    def forward(self, x, emb, context):  # x, [emb, context]
+        return F.silu(x, inplace=self.inplace)
+
 
 # control_model
 class ControlNet(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         in_channels=4,
         model_channels=320,
         hint_channels=3,
@@ -169,8 +185,8 @@ class ControlNet(nn.Module):
         attention_resolutions=[2, 4],
         channel_mult=(1, 2, 4),
         num_head_channels=64,
-        transformer_depth=[0, 2, 10],     # custom transformer support
-        context_dim=2048,                 # custom transformer support
+        transformer_depth=[0, 2, 10],  # custom transformer support
+        context_dim=2048,  # custom transformer support
         adm_in_channels=2816,
         transformer_depth_middle=10,
         operations=ControlLoraOps(),
@@ -182,9 +198,9 @@ class ControlNet(nn.Module):
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
-            operations.Linear(model_channels, time_embed_dim), # 320, 1280, up=1280, 128
+            operations.Linear(model_channels, time_embed_dim),  # 320, 1280, up=1280, 128
             nn.SiLU(),
-            operations.Linear(time_embed_dim, time_embed_dim), # 1280, 1280, up=1280, 128
+            operations.Linear(time_embed_dim, time_embed_dim),  # 1280, 1280, up=1280, 128
         )
 
         assert adm_in_channels is not None
@@ -197,30 +213,26 @@ class ControlNet(nn.Module):
         )
 
         self.input_blocks = nn.ModuleList(
-            [
-                TimestepEmbedSequential(
-                    TimestepEmbedConv2d(in_channels, model_channels, 3, padding=1)
-                )
-            ]
+            [TimestepEmbedSequential(TimestepEmbedConv2d(in_channels, model_channels, 3, padding=1))]
         )
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels)])
 
         self.input_hint_block = TimestepEmbedSequential(
-                    TimestepEmbedConv2d(hint_channels, 16, 3, padding=1, up_down=False),
-                    TimestepEmbedSiLU(), 
-                    TimestepEmbedConv2d(16, 16, 3, padding=1, up_down=False),
-                    TimestepEmbedSiLU(),
-                    TimestepEmbedConv2d(16, 32, 3, padding=1, stride=2, up_down=False),
-                    TimestepEmbedSiLU(),
-                    TimestepEmbedConv2d(32, 32, 3, padding=1),
-                    TimestepEmbedSiLU(),
-                    TimestepEmbedConv2d(32, 96, 3, padding=1, stride=2, up_down=False),
-                    TimestepEmbedSiLU(),
-                    TimestepEmbedConv2d(96, 96, 3, padding=1),
-                    TimestepEmbedSiLU(),
-                    TimestepEmbedConv2d(96, 256, 3, padding=1, stride=2, up_down=False),
-                    TimestepEmbedSiLU(),
-                    zero_module(TimestepEmbedConv2d(256, model_channels, 3, padding=1, up_down=False))
+            TimestepEmbedConv2d(hint_channels, 16, 3, padding=1, up_down=False),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(16, 16, 3, padding=1, up_down=False),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(16, 32, 3, padding=1, stride=2, up_down=False),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(32, 32, 3, padding=1),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(32, 96, 3, padding=1, stride=2, up_down=False),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(96, 96, 3, padding=1),
+            TimestepEmbedSiLU(),
+            TimestepEmbedConv2d(96, 256, 3, padding=1, stride=2, up_down=False),
+            TimestepEmbedSiLU(),
+            zero_module(TimestepEmbedConv2d(256, model_channels, 3, padding=1, up_down=False)),
         )
 
         ch = model_channels
@@ -228,7 +240,12 @@ class ControlNet(nn.Module):
         for level, mult in enumerate(channel_mult):
             for nr in range(self.num_res_blocks[level]):
                 layers = [
-                    TimestepEmbedResBlock(ch, time_embed_dim, out_channels=mult * model_channels, operations=operations)
+                    TimestepEmbedResBlock(
+                        ch,
+                        time_embed_dim,
+                        out_channels=mult * model_channels,
+                        operations=operations,
+                    )
                 ]
                 ch = mult * model_channels
                 if ds in attention_resolutions:
@@ -237,18 +254,18 @@ class ControlNet(nn.Module):
 
                     layers.append(
                         TimestepEmbedSpatialTransformer(
-                            ch, num_heads, dim_head, 
-                            depth=transformer_depth[level], 
+                            ch,
+                            num_heads,
+                            dim_head,
+                            depth=transformer_depth[level],
                             context_dim=context_dim,
-                            operations=operations
+                            operations=operations,
                         )
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self.zero_convs.append(self.make_zero_conv(ch))
             if level != len(channel_mult) - 1:
-                self.input_blocks.append(
-                    TimestepEmbedSequential(TimestepEmbedDownsample(ch, out_channels=ch))
-                )
+                self.input_blocks.append(TimestepEmbedSequential(TimestepEmbedDownsample(ch, out_channels=ch)))
                 self.zero_convs.append(self.make_zero_conv(ch))
                 ds *= 2
 
@@ -257,9 +274,13 @@ class ControlNet(nn.Module):
         self.middle_block = TimestepEmbedSequential(
             TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
             TimestepEmbedSpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
-                            operations=operations
-                        ),
+                ch,
+                num_heads,
+                dim_head,
+                depth=transformer_depth_middle,
+                context_dim=context_dim,
+                operations=operations,
+            ),
             TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
         )
         self.middle_block_out = self.make_zero_conv(ch)
@@ -269,7 +290,9 @@ class ControlNet(nn.Module):
 
     def make_zero_conv(self, channels):
         # no up/down
-        return TimestepEmbedSequential(zero_module(TimestepEmbedConv2d(channels, channels, 1, padding=0, up_down=False)))
+        return TimestepEmbedSequential(
+            zero_module(TimestepEmbedConv2d(channels, channels, 1, padding=0, up_down=False))
+        )
 
     def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
         # if os.environ.get('SDXL_DEBUG') is not None:
@@ -281,10 +304,9 @@ class ControlNet(nn.Module):
 
         t_emb = timestep_embedding(timesteps, self.model_channels).to(x.dtype)
         emb = self.time_embed(t_emb).to(x.dtype)
-
         guided_hint = self.input_hint_block(hint, emb, context)
 
-        outs: List[torch.Tensor] = []
+        output: List[torch.Tensor] = []
 
         hs = []
         assert y.shape[0] == x.shape[0]
@@ -300,15 +322,15 @@ class ControlNet(nn.Module):
                 guided_hint = None
             else:
                 h = module(h, emb, context)
-            outs.append(zero_conv(h, emb, context))
+            output.append(zero_conv(h, emb, context))
 
         h = self.middle_block(h, emb, context)
-        outs.append(self.middle_block_out(h, emb, context))
+        output.append(self.middle_block_out(h, emb, context))
 
         # if os.environ.get('SDXL_DEBUG') is not None:
-        #     todos.debug.output_var("ControlNet output", outs)
+        #     todos.debug.output_var("ControlNet output", output)
 
-        return outs
+        return output
 
 
 def create_canny_control_lora():
@@ -322,9 +344,11 @@ def create_canny_control_lora():
     # else:
     #     load_model_weight(model, checkpoint)
 
+    load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
     model = model.half()
     model = model.eval()
     return model
+
 
 def create_depth_control_lora():
     model = ControlNet()
@@ -340,6 +364,7 @@ def create_depth_control_lora():
     model = model.half()
     model = model.eval()
     return model
+
 
 def create_color_control_lora():
     model = ControlNet()
@@ -357,6 +382,7 @@ def create_color_control_lora():
     model = model.eval()
     return model
 
+
 def create_sketch_control_lora():
     model = ControlNet()
 
@@ -373,10 +399,12 @@ def create_sketch_control_lora():
     model = model.eval()
     return model
 
+
 if __name__ == "__main__":
     import todos
+
     model = create_canny_control_lora()
-    # model = torch.jit.script(model)
+    model = torch.jit.script(model)
     print(model)
     # todos.debug.output_weight(model.state_dict())
 

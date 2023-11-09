@@ -18,6 +18,7 @@ from SDXL.util import (
 import todos
 import pdb
 
+
 # first_stage_model, only for test network struct !!!
 class AutoencoderKL(nn.Module):
     """
@@ -57,13 +58,12 @@ class AutoencoderKL(nn.Module):
         # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
         load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
-
     def forward(self, x):
         x = self.encoder(x)
         return self.decode(x)
 
     def encode(self, x):
-        x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
+        x = 2.0 * x - 1.0  # convert x from [0.0, 1.0] to [-1.0, 1.0]
         h = self.encoder(x)
         moments = self.quant_conv(h)
 
@@ -75,18 +75,17 @@ class AutoencoderKL(nn.Module):
 
         return output
 
-
     def decode(self, z):
         z = self.post_quant_conv(z)
         dec = self.decoder(z)
         # tensor [dec] size: [1, 3, 600, 456], min: -1.524532, max: 1.899036, mean: 0.059854
-        out = ((dec + 1.0)/2.0).clamp(0.0, 1.0)
+        out = ((dec + 1.0) / 2.0).clamp(0.0, 1.0)
 
         return out
 
 
 def nonlinearity(x):
-    return x * torch.sigmoid(x) # swish, F.silu
+    return x * torch.sigmoid(x)  # swish, F.silu
 
 
 def Normalize(in_channels, num_groups=32):
@@ -104,6 +103,7 @@ class Downsample(nn.Module):
         x = self.conv(x)
         return x
 
+
 class Upsample(nn.Module):
     def __init__(self, in_channels):
         super(Upsample, self).__init__()
@@ -116,8 +116,8 @@ class Upsample(nn.Module):
 
 
 class ResnetBlock(nn.Module):
-    def __init__(self, *, in_channels, out_channels=None):
-        super(ResnetBlock, self).__init__()
+    def __init__(self, in_channels, out_channels=None):
+        super().__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
         self.out_channels = out_channels
@@ -127,7 +127,7 @@ class ResnetBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
         self.norm2 = Normalize(out_channels)
-        self.dropout = nn.Dropout(0.0)
+        # self.dropout = nn.Dropout(0.0)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         if self.in_channels != self.out_channels:
             self.nin_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
@@ -137,12 +137,12 @@ class ResnetBlock(nn.Module):
     def forward(self, x):
         h = x
         h = self.norm1(h)
-        h = self.swish(h) # nonlinearity(h)
+        h = self.swish(h)  # nonlinearity(h)
         h = self.conv1(h)
 
         h = self.norm2(h)
-        h = self.swish(h) # nonlinearity(h)
-        h = self.dropout(h)
+        h = self.swish(h)  # nonlinearity(h)
+        # h = self.dropout(h)
         h = self.conv2(h)
 
         if self.in_channels != self.out_channels:
@@ -153,9 +153,7 @@ class ResnetBlock(nn.Module):
 
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
-        super(AttnBlock, self).__init__()
-        # self.in_channels = in_channels
-
+        super().__init__()
         self.norm = Normalize(in_channels)
         self.q = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
         self.k = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
@@ -188,8 +186,9 @@ class AttnBlock(nn.Module):
 
         return x + h_
 
+
 class Encoder(nn.Module):
-    def __init__(self, 
+    def __init__(self,
         ch=128,
         out_ch=3,
         ch_mult=(1, 2, 4, 4),
@@ -205,11 +204,11 @@ class Encoder(nn.Module):
         # downsampling
         self.conv_in = nn.Conv2d(in_channels, ch, kernel_size=3, stride=1, padding=1)
 
-        curr_res = resolution # 256
+        curr_res = resolution  # 256
         in_ch_mult = (1,) + tuple(ch_mult)
         self.in_ch_mult = in_ch_mult
         self.down = nn.ModuleList()
-        for i_level in range(self.num_resolutions): # 4
+        for i_level in range(self.num_resolutions):  # 4
             block = nn.ModuleList()
             block_in = ch * in_ch_mult[i_level]
             block_out = ch * ch_mult[i_level]
@@ -221,7 +220,7 @@ class Encoder(nn.Module):
             if i_level != self.num_resolutions - 1:
                 down.downsample = Downsample(block_in)
                 curr_res = curr_res // 2
-            else: # support torch.jit.script
+            else:  # support torch.jit.script
                 down.downsample = nn.Identity()
 
             self.down.append(down)
@@ -263,6 +262,7 @@ class Encoder(nn.Module):
         h = self.conv_out(h)
 
         return h
+
 
 class Decoder(nn.Module):
     def __init__(self,
@@ -306,14 +306,13 @@ class Decoder(nn.Module):
             if i_level != 0:
                 up.upsample = Upsample(block_in)
                 curr_res = curr_res * 2
-            else: # Support torch.jit.script
-                up.upsample = nn.Identity()                
+            else:  # Support torch.jit.script
+                up.upsample = nn.Identity()
             self.up.insert(0, up)  # prepend to get consistent order
 
         # end
         self.norm_out = Normalize(block_in)
         self.conv_out = nn.Conv2d(block_in, out_ch, kernel_size=3, stride=1, padding=1)
-
 
     def forward(self, z):
         h = self.conv_in(z)
@@ -339,8 +338,8 @@ class Decoder(nn.Module):
 
         return h
 
-    def up_layer(self, i:int, h):
-        '''ugly for torch.jit.script no reversed(), oh oh oh !!!'''
+    def up_layer(self, i: int, h):
+        """ugly for torch.jit.script no reversed(), oh oh oh !!!"""
         for i_level, layer in enumerate(self.up):
             if i_level == i:
                 for i_block, block in enumerate(layer.block):
@@ -359,6 +358,5 @@ def create_vae_model():
 
 if __name__ == "__main__":
     model = create_vae_model()
-
     model = torch.jit.script(model)
     print(model)

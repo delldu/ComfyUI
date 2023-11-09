@@ -8,13 +8,14 @@
 # ***
 # ************************************************************************************/
 #
-#From https://github.com/kornia/kornia
+# From https://github.com/kornia/kornia
 import math
 
 import torch
 import torch.nn.functional as F
 import todos
 import pdb
+
 
 def get_canny_nms_kernel(device=None, dtype=None):
     """Utility function that returns 3x3 kernels for the Canny Non-maximal suppression."""
@@ -51,6 +52,7 @@ def get_hysteresis_kernel(device=None, dtype=None):
         dtype=dtype,
     )
 
+
 def gaussian_blur_2d(img, kernel_size, sigma):
     ksize_half = (kernel_size - 1) * 0.5
 
@@ -71,10 +73,12 @@ def gaussian_blur_2d(img, kernel_size, sigma):
 
     return img
 
+
 def get_sobel_kernel2d(device=None, dtype=None):
     kernel_x = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], device=device, dtype=dtype)
     kernel_y = kernel_x.transpose(0, 1)
     return torch.stack([kernel_x, kernel_y])
+
 
 def spatial_gradient(input, normalized: bool = True):
     kernel = get_sobel_kernel2d(device=input.device, dtype=input.dtype)
@@ -88,11 +92,12 @@ def spatial_gradient(input, normalized: bool = True):
     # Pad with "replicate for spatial dims, but with zeros for channel
     spatial_pad = [kernel.size(1) // 2, kernel.size(1) // 2, kernel.size(2) // 2, kernel.size(2) // 2]
     out_channels: int = 2
-    padded_inp = torch.nn.functional.pad(input.reshape(b * c, 1, h, w), spatial_pad, 'replicate')
+    padded_inp = torch.nn.functional.pad(input.reshape(b * c, 1, h, w), spatial_pad, "replicate")
     out = F.conv2d(padded_inp, tmp_kernel, groups=1, padding=0, stride=1)
     return out.reshape(b, c, out_channels, h, w)
 
-def rgb_to_grayscale(image, rgb_weights = None):
+
+def rgb_to_grayscale(image, rgb_weights=None):
     if len(image.shape) < 3 or image.shape[-3] != 3:
         raise ValueError(f"Input size must have a shape of (*, 3, H, W). Got {image.shape}")
 
@@ -117,14 +122,15 @@ def rgb_to_grayscale(image, rgb_weights = None):
     w_r, w_g, w_b = rgb_weights.unbind()
     return w_r * r + w_g * g + w_b * b
 
+
 def canny(
     input,
-    low_threshold = 0.1,
-    high_threshold = 0.2,
-    kernel_size  = 5,
-    sigma = 1,
-    hysteresis = True,
-    eps = 1e-6,
+    low_threshold=0.1,
+    high_threshold=0.2,
+    kernel_size=5,
+    sigma=1,
+    hysteresis=True,
+    eps=1e-6,
 ):
     device = input.device
     dtype = input.dtype
@@ -186,7 +192,7 @@ def canny(
     edges = edges.to(dtype)
 
     # Hysteresis
-    if hysteresis: # True
+    if hysteresis:  # True
         edges_old: Tensor = -torch.ones(edges.shape, device=edges.device, dtype=dtype)
         hysteresis_kernels: Tensor = get_hysteresis_kernel(device, dtype)
 

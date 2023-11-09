@@ -16,6 +16,7 @@ from einops.layers.torch import Rearrange
 from typing import Optional
 import pdb
 
+
 def exists(val):
     return val is not None
 
@@ -26,9 +27,8 @@ def default(val, d):
     return d
 
 
-# feedforward
 class GEGLU(nn.Module):
-    def __init__(self, dim_in, dim_out, operations=None): # UNetOps(), ControlnetOps()
+    def __init__(self, dim_in, dim_out, operations=None):  # UNetOps(), ControlnetOps()
         super().__init__()
         self.proj = operations.Linear(dim_in, dim_out * 2)
 
@@ -38,17 +38,14 @@ class GEGLU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, dim_out=None, mult=4, dtype=None, operations=None): # UNetOps(), ControlnetOps()
-
+    def __init__(self, dim, dim_out=None, mult=4, dtype=None, operations=None):  # UNetOps(), ControlnetOps()
         super().__init__()
         inner_dim = int(dim * mult)
         dim_out = default(dim_out, dim)
         project_in = GEGLU(dim, inner_dim, operations=operations)
 
         self.net = nn.Sequential(
-            project_in,
-            nn.Dropout(0.0),
-            operations.Linear(inner_dim, dim_out)
+            project_in, nn.Dropout(0.0), operations.Linear(inner_dim, dim_out)  # do not delete it !!!
         )
 
     def forward(self, x):
@@ -60,7 +57,9 @@ def Normalize(in_channels):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, operations=None): # UNetOps(), ControlnetOps()
+    def __init__(
+        self, query_dim, context_dim=None, heads=8, dim_head=64, operations=None
+    ):  # UNetOps(), ControlnetOps()
         super().__init__()
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
@@ -73,13 +72,12 @@ class CrossAttention(nn.Module):
         self.to_v = operations.Linear(context_dim, inner_dim, bias=False)
 
         self.to_out = nn.Sequential(
-                        operations.Linear(inner_dim, query_dim),
-                        nn.Dropout(0.0),
-                    )
+            operations.Linear(inner_dim, query_dim),
+            nn.Dropout(0.0),  # # do not delete it !!!
+        )
+        self.BxHxNxD_BxNxHD = Rearrange("b h n d -> b n (h d)")
+        self.BxNxHxD_BHxNxD = Rearrange("b n h d -> (b h) n d")
 
-        self.BxHxNxD_BxNxHD = Rearrange('b h n d -> b n (h d)')
-        self.BxNxHxD_BHxNxD = Rearrange('b n h d -> (b h) n d')
-        
     def forward(self, x, context: Optional[torch.Tensor]):
         q = self.to_q(x)
         # context = default(context, x)
@@ -102,15 +100,17 @@ class CrossAttention(nn.Module):
 
         return self.to_out(out)
 
-class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, context_dim=None, operations=None): # UNetOps(), ControlnetOps()
-        super().__init__()
 
-        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, 
-                              context_dim=None, operations=operations)
+class BasicTransformerBlock(nn.Module):
+    def __init__(self, dim, n_heads, d_head, context_dim=None, operations=None):  # UNetOps(), ControlnetOps()
+        super().__init__()
+        self.attn1 = CrossAttention(
+            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=None, operations=operations
+        )
         self.ff = FeedForward(dim, operations=operations)
-        self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
-                              heads=n_heads, dim_head=d_head, operations=operations)  # is self-attn if context is none
+        self.attn2 = CrossAttention(
+            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=context_dim, operations=operations
+        )
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
@@ -138,30 +138,30 @@ class TimestepEmbedSpatialTransformer(nn.Module):
     Then apply standard transformer action.
     Finally, reshape to image
     """
-    def __init__(self, in_channels, n_heads, d_head,
-                 depth=1, context_dim=None,
-                 operations=None): # UNetOps(), ControlnetOps()
 
+    def __init__(
+        self, in_channels, n_heads, d_head, depth=1, context_dim=None, operations=None
+    ):  # UNetOps(), ControlnetOps()
         super().__init__()
         if exists(context_dim) and not isinstance(context_dim, list):
             context_dim = [context_dim] * depth
+
         inner_dim = n_heads * d_head
         self.norm = Normalize(in_channels)
         self.proj_in = operations.Linear(in_channels, inner_dim)
 
         self.transformer_blocks = nn.ModuleList(
-            [BasicTransformerBlock(inner_dim, n_heads, d_head, context_dim=context_dim[d],
-                                   operations=operations)
-                for d in range(depth)]
+            [
+                BasicTransformerBlock(inner_dim, n_heads, d_head, context_dim=context_dim[d], operations=operations)
+                for d in range(depth)
+            ]
         )
         self.proj_out = operations.Linear(in_channels, inner_dim)
 
-        self.BxCxHxW_BxHWxC = Rearrange('b c h w -> b (h w) c')
-        self.BxHxWxC_BxCxHxW = Rearrange('b h w c -> b c h w')
+        self.BxCxHxW_BxHWxC = Rearrange("b c h w -> b (h w) c")
+        self.BxHxWxC_BxCxHxW = Rearrange("b h w c -> b c h w")
 
-    def forward(self, x, emb, context):
-        # xxxx7777: x, [emb], context
-
+    def forward(self, x, emb, context):  # x, [emb], context
         # note: if no context is given, cross-attention defaults to self-attention
         if not isinstance(context, list):
             context = [context] * len(self.transformer_blocks)
@@ -171,7 +171,7 @@ class TimestepEmbedSpatialTransformer(nn.Module):
         # x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
         x = self.BxCxHxW_BxHWxC(x).contiguous()
         x = self.proj_in(x)
-            
+
         for i, block in enumerate(self.transformer_blocks):
             x = block(x, context=context[i])
         x = self.proj_out(x)
@@ -179,4 +179,3 @@ class TimestepEmbedSpatialTransformer(nn.Module):
         x = x.reshape(b, h, w, c)
         x = self.BxHxWxC_BxCxHxW(x).contiguous()
         return x + x_in
-

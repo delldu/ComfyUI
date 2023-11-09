@@ -22,6 +22,7 @@ from typing import Optional, Tuple
 
 import pdb
 
+
 def extract_into_tensor(a, t):
     # pp a.size() -- torch.Size([1000])
     # t = tensor([0], device='cuda:0')
@@ -30,6 +31,7 @@ def extract_into_tensor(a, t):
     b = t.shape[0]
     out = a.gather(-1, t)
     return out.reshape(b, 1)
+
 
 class Timestep(nn.Module):
     def __init__(self, dim):
@@ -41,6 +43,7 @@ class Timestep(nn.Module):
 
     def __repr__(self):
         return f"Timestep({self.dim})"
+
 
 class CLIPEmbedNoiseAugmentation(nn.Module):
     def __init__(self, max_noise_level=1000, timestep_dim=1280):
@@ -57,33 +60,34 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
             param.requires_grad = False
 
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
-
         betas = make_beta_schedule(timesteps, linear_start=linear_start, linear_end=linear_end)
-        alphas = 1. - betas
+        alphas = 1.0 - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
 
-        timesteps, = betas.shape
+        (timesteps,) = betas.shape
         self.num_timesteps = int(timesteps)
         self.linear_start = linear_start
         self.linear_end = linear_end
-        assert alphas_cumprod.shape[0] == self.num_timesteps, 'alphas have to be defined for each timestep'
+        assert alphas_cumprod.shape[0] == self.num_timesteps, "alphas have to be defined for each timestep"
 
         to_torch = partial(torch.tensor)
 
-        self.register_buffer('betas', to_torch(betas))
-        self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
+        self.register_buffer("betas", to_torch(betas))
+        self.register_buffer("alphas_cumprod", to_torch(alphas_cumprod))
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
-        self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod)))
-        self.register_buffer('sqrt_one_minus_alphas_cumprod', to_torch(np.sqrt(1. - alphas_cumprod)))
+        self.register_buffer("sqrt_alphas_cumprod", to_torch(np.sqrt(alphas_cumprod)))
+        self.register_buffer("sqrt_one_minus_alphas_cumprod", to_torch(np.sqrt(1.0 - alphas_cumprod)))
 
     def q_sample(self, x_start, t):
         noise = torch.randn_like(x_start)
-        return (extract_into_tensor(self.sqrt_alphas_cumprod, t) * x_start +
-                extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t) * noise)
+        return (
+            extract_into_tensor(self.sqrt_alphas_cumprod, t) * x_start
+            + extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t) * noise
+        )
 
     def scale(self, x):
-        x = (x - self.data_mean) * 1. / self.data_std
+        x = (x - self.data_mean) * 1.0 / self.data_std
         return x
 
     def unscale(self, x):
@@ -93,12 +97,13 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
     def forward(self, x, noise_level) -> Tuple[torch.Tensor, torch.Tensor]:
         # x.size() -- [1280]
         # t = tensor([10])
-    
+
         x = self.scale(x)
         z = self.q_sample(x, noise_level)
         z = self.unscale(z)
         noise_level = self.time_embed(noise_level)
         return z, noise_level
+
 
 if __name__ == "__main__":
     model = CLIPEmbedNoiseAugmentation()

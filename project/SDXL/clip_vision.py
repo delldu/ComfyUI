@@ -64,10 +64,10 @@ class CLIPVisionEmbeddings(nn.Module):
         embeddings = embeddings + self.position_embedding(self.position_ids)
         return embeddings
 
+
 class CLIPVisionTransformer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # self.config = config
         embed_dim = config.hidden_size
 
         self.embeddings = CLIPVisionEmbeddings(config)
@@ -75,12 +75,11 @@ class CLIPVisionTransformer(nn.Module):
         self.encoder = CLIPEncoder(config)
         self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
 
-
     def forward(self, pixel_values):
         hidden_states = self.embeddings(pixel_values)
         hidden_states = self.pre_layrnorm(hidden_states)
 
-        encoder_outputs: Dict[str, torch.Tensor] = self.encoder(inputs_embeds=hidden_states, causal_attention_mask=None) # xxxx1111
+        encoder_outputs: Dict[str, torch.Tensor] = self.encoder(inputs_embeds=hidden_states, causal_attention_mask=None)
 
         last_hidden_state = encoder_outputs["last_hidden_state"]
         pool_encoded = last_hidden_state[:, 0, :]
@@ -90,9 +89,10 @@ class CLIPVisionTransformer(nn.Module):
 
 
 class CLIPVisionEncode(nn.Module):
-    '''
-        CLIPVisionModelWithProjection
-    '''
+    """
+    CLIPVisionModelWithProjection
+    """
+
     def __init__(self):
         super().__init__()
         # come from comfy/clip_vision_config_g.json
@@ -111,7 +111,7 @@ class CLIPVisionEncode(nn.Module):
                 "num_attention_heads": 16,
                 "num_channels": 3,
                 "num_hidden_layers": 48,
-                "atten_layer_index": 0, # useless
+                "atten_layer_index": 0,  # useless
                 "patch_size": 14,
                 "projection_dim": 1280,
                 "torch_dtype": "float32",
@@ -127,10 +127,7 @@ class CLIPVisionEncode(nn.Module):
         load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
 
-    # def get_input_embeddings(self):
-    #     return self.vision_model.embeddings.patch_embedding
-
-    def forward(self, pixel_values, normal_input: bool=True):
+    def forward(self, pixel_values, normal_input: bool = True):
         if normal_input:
             pixel_values = F.interpolate(pixel_values, size=(224, 224), mode="bilinear", align_corners=False)
             # image normal
@@ -141,7 +138,6 @@ class CLIPVisionEncode(nn.Module):
         image_embeds = self.visual_projection(pool_encoded)
 
         return image_embeds.to(torch.float32)
-
 
 
 def create_old_clip_vision():
@@ -158,12 +154,13 @@ def create_old_clip_vision():
 def create_clip_vision_model():
     # output: SdxlClipVision
 
-    '''This model is been used by sdxl 1.0 base model'''
+    """This model is been used by sdxl 1.0 base model"""
 
     model = CLIPVisionEncode()
-    model.eval() # half().eval().cuda()
+    model.eval()  # half().eval().cuda()
 
     return model
+
 
 if __name__ == "__main__":
     import todos
@@ -188,7 +185,7 @@ if __name__ == "__main__":
     print("New implement ...")
     model = create_clip_vision_model()
     with torch.no_grad():
-        output = model(image.half().cuda(), normal_input=False)
+        output = model(image, normal_input=False)
     todos.debug.output_var("output/image_embeds", output)
 
     model = torch.jit.script(model)

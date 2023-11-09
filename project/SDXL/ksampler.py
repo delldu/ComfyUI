@@ -44,18 +44,20 @@ def append_dims(x, target_dims):
     """Appends dimensions to the end of a tensor until it has target_dims dimensions."""
     dims_to_append = target_dims - x.ndim
     if dims_to_append < 0:
-        raise ValueError(f'input has {x.ndim} dims but target_dims is {target_dims}, which is less')
+        raise ValueError(f"input has {x.ndim} dims but target_dims is {target_dims}, which is less")
     return x[(...,) + (None,) * dims_to_append]
 
 
 def get_ancestral_step(sigma_from, sigma_to):
-    sigma_up = min(sigma_to, (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5)
-    sigma_down = (sigma_to ** 2 - sigma_up ** 2) ** 0.5
+    sigma_up = min(sigma_to, (sigma_to**2 * (sigma_from**2 - sigma_to**2) / sigma_from**2) ** 0.5)
+    sigma_down = (sigma_to**2 - sigma_up**2) ** 0.5
     return sigma_down, sigma_up
+
 
 def to_d(latent_noise, sigma, denoised):
     """Converts a denoiser output to a Karras ODE derivative."""
     return (latent_noise - denoised) / append_dims(sigma, latent_noise.ndim)
+
 
 # KarrasScheduler -- sigma_min, sigma_max ...
 def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
@@ -64,9 +66,10 @@ def get_karras_sigmas(n, sigma_min=0.0291675, sigma_max=14.614642, rho=7.0):
     ramp = torch.linspace(0, 1, n)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
-    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho # size() -- 13
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho  # size() -- 13
 
     return torch.cat([sigmas, sigmas.new_zeros([1])])
+
 
 class KSampler(nn.Module):
     def __init__(self, version="refiner_1.0"):
@@ -89,10 +92,10 @@ class KSampler(nn.Module):
         # ==> torch.linspace(linear_start ** 0.5, linear_end ** 0.5, n_timestep, dtype=torch.float64) ** 2
         # betas.shape -- (1000,), range: [0.00085, 0.012]
 
-        alphas = 1. - betas
+        alphas = 1.0 - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
 
-        timesteps, = betas.shape
+        (timesteps,) = betas.shape
         self.num_timesteps = int(timesteps)
         self.linear_start = linear_start
         self.linear_end = linear_end
@@ -100,10 +103,10 @@ class KSampler(nn.Module):
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         log_sigmas = np.log(sigmas)
 
-        self.register_buffer('betas', torch.tensor(betas))
-        self.register_buffer('alphas_cumprod', torch.tensor(alphas_cumprod))
-        self.register_buffer('sigmas', torch.tensor(sigmas))
-        self.register_buffer('log_sigmas', torch.tensor(log_sigmas))
+        self.register_buffer("betas", torch.tensor(betas))
+        self.register_buffer("alphas_cumprod", torch.tensor(alphas_cumprod))
+        self.register_buffer("sigmas", torch.tensor(sigmas))
+        self.register_buffer("log_sigmas", torch.tensor(log_sigmas))
 
     def sigma_to_t(self, sigma):
         log_sigma = sigma.log()
@@ -111,59 +114,50 @@ class KSampler(nn.Module):
 
         return dists.abs().argmin(dim=0).view(sigma.shape)
 
-    # def t_to_sigma(self, t):
-    #     t = t.float()
-    #     low_idx = t.floor().long()
-    #     high_idx = t.ceil().long()
-    #     w = t.frac()
-    #     log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
-
-    #     return log_sigma.exp()
-
     def get_scalings(self, sigma):
         # c_out = -sigma
         # c_in = 1 / (sigma ** 2 + self.sigma_data ** 2) ** 0.5
-        c_in = 1.0 / ((sigma ** 2 + 1.0) ** 0.5)
+        c_in = 1.0 / ((sigma**2 + 1.0) ** 0.5)
         return c_in
 
     def diffusion_predict(self, latent_noise, sigma, positive_tensor, negative_tensor, cond_scale):
         c_out = -sigma
-        c_in =  append_dims(self.get_scalings(sigma), latent_noise.ndim)
+        c_in = append_dims(self.get_scalings(sigma), latent_noise.ndim)
 
         t = self.sigma_to_t(sigma)
 
         x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0).half()
         t2 = torch.cat((t, t), dim=0).half()
-        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0).half()
-        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0).half()
-        ctrl2 = {'input':[], 'middle':[], 'output': []} # control output list
+        c2 = torch.cat((positive_tensor["text_encoded"], negative_tensor["text_encoded"]), dim=0).half()
+        y2 = torch.cat((positive_tensor["adm_encoded"], negative_tensor["adm_encoded"]), dim=0).half()
+        ctrl2 = {"input": [], "middle": [], "output": []}  # control output list
 
-        if 'lora_guide' in positive_tensor:
+        if "lora_guide" in positive_tensor:
             if os.environ.get("SDXL_DEBUG") is not None:
-                todos.debug.output_var("lora_guide", positive_tensor['lora_guide'])
+                todos.debug.output_var("lora_guide", positive_tensor["lora_guide"])
 
-            h2 = positive_tensor['lora_guide'].half()
+            h2 = positive_tensor["lora_guide"].half()
             with torch.no_grad():
                 control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
 
             weight = 1.0
-            if 'lora_weight' in positive_tensor: # xxxx9999
-                weight = positive_tensor['lora_weight']
+            if "lora_weight" in positive_tensor:  # xxxx9999
+                weight = positive_tensor["lora_weight"]
 
             # The following come from function control_merge
             for i in range(len(control_output)):
                 if i == (len(control_output) - 1):
-                    key = 'middle'
+                    key = "middle"
                 else:
-                    key = 'output'
+                    key = "output"
                 ctrl2[key].append(control_output[i] * weight)
 
         with torch.no_grad():
-            e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y = y2, control=ctrl2)
+            e2 = self.diffusion_model(x2, timesteps=t2, context=c2, y=y2, control=ctrl2)
             eps1 = e2[0:1, :, :, :]
             eps2 = e2[1:2, :, :, :]
 
-        eps = eps2 + (eps1 - eps2) * cond_scale # uncond + (cond - uncond) * cond_scale, get_eps
+        eps = eps2 + (eps1 - eps2) * cond_scale  # uncond + (cond - uncond) * cond_scale, get_eps
 
         return (latent_noise + eps * c_out).to(torch.float32)
 
@@ -172,14 +166,14 @@ class KSampler(nn.Module):
             sigmas = get_karras_sigmas(steps)
         else:
             denoise = max(0.01, denoise)
-            new_steps = int(steps/denoise)
+            new_steps = int(steps / denoise)
             sigmas = get_karras_sigmas(new_steps)
-            sigmas = sigmas[-(steps + 1):]
+            sigmas = sigmas[-(steps + 1) :]
         return sigmas
 
     # control_tensor['lora_guide', 'lora_weight']
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
-        if 'lora_guide' in positive_tensor:
+        if "lora_guide" in positive_tensor:
             pass
             # load canny lora model weight if needed ???
 
@@ -193,7 +187,7 @@ class KSampler(nn.Module):
         todos.debug.output_var("latent_image", latent_image)
         print("-" * 120)
 
-        sigmas = self.set_steps(steps, denoise).to(latent_image.device) # steps, denois ==> sigmas
+        sigmas = self.set_steps(steps, denoise).to(latent_image.device)  # steps, denois ==> sigmas
 
         noise = prepare_noise(latent_image, seed)
         if math.isclose(float(self.sigmas[-1]), float(sigmas[0]), rel_tol=1e-05):
@@ -202,15 +196,15 @@ class KSampler(nn.Module):
             noise = noise * sigmas[0]
 
         latent_image = self.process_latent_in(latent_image)
-        latent_noise = latent_image + noise # prepare_noise(latent_image, seed) * sigmas[0]
+        latent_noise = latent_image + noise  # prepare_noise(latent_image, seed) * sigmas[0]
 
         # forget:  steps=20, denoise=1.0, seed=-1
         # forward: latent_noise, positive_tensor, negative_tensor, cond_scale
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # https://github.com/lllyasviel/Fooocus
-        # 
-        # DPM family seems well-suited for XL, since XL sometimes generates overly smooth texture but DPM family sometimes 
+        #
+        # DPM family seems well-suited for XL, since XL sometimes generates overly smooth texture but DPM family sometimes
         # generate overly dense detail in texture. Their joint effect looks neutral and appealing to human perception.
         #
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -219,10 +213,9 @@ class KSampler(nn.Module):
         # sample = self.sample_dpm_2_ancestral(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
         sample = self.sample_dpm_2(sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale)
 
-        latent_output = self.process_latent_out(sample) # sample
+        latent_output = self.process_latent_out(sample)  # sample
 
         return latent_output
-
 
     def process_latent_in(self, latent):
         return latent * self.scale_factor
@@ -230,18 +223,17 @@ class KSampler(nn.Module):
     def process_latent_out(self, latent):
         return latent / self.scale_factor
 
-    def sample_euler_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale): 
+    def sample_euler_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
         """Ancestral sampling with Euler method steps."""
 
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # model_forward
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(
+                latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale
+            )
 
             sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
-            d = to_d(latent_noise, sigmas[i], denoised) 
+            d = to_d(latent_noise, sigmas[i], denoised)
 
             # Euler method
             dt = sigma_down - sigmas[i]
@@ -257,11 +249,9 @@ class KSampler(nn.Module):
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             sigma_hat = sigmas[i]
-
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # model_forward
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            denoised = self.diffusion_predict(latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(
+                latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale
+            )
 
             d = to_d(latent_noise, sigma_hat, denoised)
             dt = sigmas[i + 1] - sigma_hat
@@ -270,17 +260,15 @@ class KSampler(nn.Module):
 
         return latent_noise
 
-
     def sample_dpm_2(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
         """A sampler inspired by DPM-Solver-2 and Algorithm 2 from Karras et al. (2022)."""
 
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
             sigma_hat = sigmas[i]
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # model_forward
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            denoised = self.diffusion_predict(latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(
+                latent_noise, sigma_hat * s_in, positive_tensor, negative_tensor, cond_scale
+            )
             d = to_d(latent_noise, sigma_hat, denoised)
             if sigmas[i + 1] == 0:
                 # Euler method
@@ -292,26 +280,19 @@ class KSampler(nn.Module):
                 dt_1 = sigma_mid - sigma_hat
                 dt_2 = sigmas[i + 1] - sigma_hat
                 x_2 = latent_noise + d * dt_1
-
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                # model_forward
-                #
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 denoised_2 = self.diffusion_predict(x_2, sigma_mid * s_in, positive_tensor, negative_tensor, cond_scale)
                 d_2 = to_d(x_2, sigma_mid, denoised_2)
                 latent_noise = latent_noise + d_2 * dt_2
         return latent_noise
-
 
     def sample_dpm_2_ancestral(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
         """Ancestral sampling with DPM-Solver second-order steps."""
 
         s_in = latent_noise.new_ones([latent_noise.shape[0]])
         for i in trange(len(sigmas) - 1):
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # model_forward
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            denoised = self.diffusion_predict(latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale)
+            denoised = self.diffusion_predict(
+                latent_noise, sigmas[i] * s_in, positive_tensor, negative_tensor, cond_scale
+            )
 
             sigma_down, sigma_up = get_ancestral_step(sigmas[i], sigmas[i + 1])
 
@@ -327,17 +308,13 @@ class KSampler(nn.Module):
                 dt_1 = sigma_mid - sigmas[i]
                 dt_2 = sigma_down - sigmas[i]
                 x_2 = latent_noise + d * dt_1
-                
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                # model_forward
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
                 denoised_2 = self.diffusion_predict(x_2, sigma_mid * s_in, positive_tensor, negative_tensor, cond_scale)
 
                 d_2 = to_d(x_2, sigma_mid, denoised_2)
                 latent_noise = latent_noise + d_2 * dt_2
                 latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
         return latent_noise
-
 
     def encode_adm(self, cond, H, W, positive=True):
         pass
@@ -350,15 +327,15 @@ if __name__ == "__main__":
     # model = torch.jit.script(model)
     model = model.cuda()
 
-    # NO load weights, just test process ... !!!!!!!!!!!!!!!!!!!!!!!!
+    # NO weights, just for testing process ... 
     positive_tensor = {
-        "text_encoded" : torch.randn(1, 77, 1280).cuda(),
-        "pool_encoded" : torch.randn(1, 1280).cuda(),
+        "text_encoded": torch.randn(1, 77, 1280).cuda(),
+        "pool_encoded": torch.randn(1, 1280).cuda(),
     }
 
     negative_tensor = {
-        "text_encoded" : torch.randn(1, 77, 1280).cuda(),
-        "pool_encoded" : torch.randn(1, 1280).cuda(),
+        "text_encoded": torch.randn(1, 77, 1280).cuda(),
+        "pool_encoded": torch.randn(1, 1280).cuda(),
     }
 
     latent_image = torch.randn(1, 4, 75, 57).cuda()
