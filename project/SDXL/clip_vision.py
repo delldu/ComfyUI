@@ -37,7 +37,7 @@ class CLIPVisionEmbeddings(nn.Module):
         self.image_size = config.image_size
         self.patch_size = config.patch_size
 
-        self.class_embedding = nn.Parameter(torch.randn(self.embed_dim))
+        self.class_embedding = nn.Parameter(torch.randn(self.embed_dim), requires_grad=False)
 
         self.patch_embedding = nn.Conv2d(
             in_channels=config.num_channels,

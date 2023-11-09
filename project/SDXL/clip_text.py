@@ -274,8 +274,9 @@ class SDXLClipL(nn.Module):
         )
 
         self.transformer = CLIPTextModel(config)
-        self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
-        self.logit_scale = nn.Parameter(torch.tensor(4.6055))
+        self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]),
+            requires_grad=False)
+        self.logit_scale = nn.Parameter(torch.tensor(4.6055), requires_grad=False)
         self.layer_norm_hidden_state = True
 
     def forward(self, tokens) -> List[torch.Tensor]:
@@ -321,8 +322,9 @@ class SDXLClipG(nn.Module):
             }
         )
         self.transformer = CLIPTextModel(config)
-        self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]))
-        self.logit_scale = nn.Parameter(torch.tensor(4.6055))
+        self.text_projection = nn.Parameter(torch.eye(self.transformer.get_input_embeddings().weight.shape[1]),
+            requires_grad=False)
+        self.logit_scale = nn.Parameter(torch.tensor(4.6055), requires_grad=False)
         self.layer_norm_hidden_state = False
 
     def forward(self, tokens) -> List[torch.Tensor]:

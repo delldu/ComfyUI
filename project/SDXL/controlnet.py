@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import SDXL.util
-
 from SDXL.util import (
     zero_module,
     timestep_embedding,
@@ -25,14 +23,16 @@ from SDXL.util import (
 )
 
 from SDXL.attention import (
-    SpatialTransformer,
+    TimestepEmbedSpatialTransformer,
 )
 
 from SDXL.unet import (
     TimestepEmbedSequential,
-    ResBlock,
-    Downsample,
+    TimestepEmbedResBlock,
+    TimestepEmbedDownsample,
 )
+
+from typing import Dict, List
 
 import todos
 import pdb
@@ -83,10 +83,8 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
 
 class ControlLoraOps:
     class Linear(nn.Module):
-        # def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
         def __init__(self, in_features, out_features, bias=True):
             super().__init__()
-            # self.dtype = torch.float16
             self.in_features = in_features
             self.out_features = out_features
             self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False) 
@@ -95,9 +93,6 @@ class ControlLoraOps:
             self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False) 
 
         def forward(self, input):
-            # input = input.to(self.dtype)
-            # pdb.set_trace()
-
             return F.linear(input, self.weight + torch.mm(self.up, self.down), self.bias)
 
         def __repr__(self):
@@ -109,7 +104,7 @@ class ControlLoraOps:
             s += ")"
             return s
 
-class Conv2d(nn.Module):
+class TimestepEmbedConv2d(nn.Module):
     def __init__(self,
         in_channels,
         out_channels,
@@ -119,8 +114,6 @@ class Conv2d(nn.Module):
         dilation=1,
         groups=1,
         bias=True,
-        # device=None,
-        # dtype=None,
         up_down=True,
     ):
         super().__init__()
@@ -141,7 +134,7 @@ class Conv2d(nn.Module):
             self.up = None
             self.down = None
 
-    def forward(self, input):
+    def forward(self, input, emb=None, context=None): # x, [emb, context]
         if self.up is not None:
             return F.conv2d(input, 
                 self.weight + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape), 
@@ -151,7 +144,7 @@ class Conv2d(nn.Module):
 
 
     def __repr__(self):
-        s = f"Conv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
+        s = f"TimestepEmbedConv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
         s += f", kernel_size={self.kernel_size}, stride={self.stride}"
         s += f", weight=Parameter({list(self.weight.size())})"
         s += f", bias=Parameter({list(self.bias.size())})"
@@ -162,6 +155,9 @@ class Conv2d(nn.Module):
         s += ")"
         return s
 
+class TimestepEmbedSiLU(nn.SiLU):
+    def forward(self, x, emb, context): # x, [emb, context]
+        return F.silu(x, inplace=self.inplace)        
 
 # control_model
 class ControlNet(nn.Module):
@@ -172,13 +168,11 @@ class ControlNet(nn.Module):
         num_res_blocks=2,
         attention_resolutions=[2, 4],
         channel_mult=(1, 2, 4),
-        use_fp16=True,
         num_head_channels=64,
         transformer_depth=[0, 2, 10],     # custom transformer support
         context_dim=2048,                 # custom transformer support
         adm_in_channels=2816,
         transformer_depth_middle=10,
-        # device=None,
         operations=ControlLoraOps(),
     ):
         super().__init__()
@@ -186,29 +180,16 @@ class ControlNet(nn.Module):
         self.model_channels = model_channels
         self.num_res_blocks = len(channel_mult) * [num_res_blocks]
 
-        self.attention_resolutions = attention_resolutions
-        self.channel_mult = channel_mult
-        # self.dtype = torch.float16 if use_fp16 else torch.float32
-        self.num_head_channels = num_head_channels
-
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
-            # operations.Linear(model_channels, time_embed_dim, dtype=self.dtype, device=device), # 320, 1280, up=1280, 128
-            # nn.SiLU(),
-            # operations.Linear(time_embed_dim, time_embed_dim, dtype=self.dtype, device=device), # 1280, 1280, up=1280, 128
-
             operations.Linear(model_channels, time_embed_dim), # 320, 1280, up=1280, 128
             nn.SiLU(),
             operations.Linear(time_embed_dim, time_embed_dim), # 1280, 1280, up=1280, 128
-
         )
 
         assert adm_in_channels is not None
         self.label_emb = nn.Sequential(
             nn.Sequential(
-                # operations.Linear(adm_in_channels, time_embed_dim, dtype=self.dtype, device=device),
-                # nn.SiLU(),
-                # operations.Linear(time_embed_dim, time_embed_dim, dtype=self.dtype, device=device),
                 operations.Linear(adm_in_channels, time_embed_dim),
                 nn.SiLU(),
                 operations.Linear(time_embed_dim, time_embed_dim),
@@ -218,38 +199,36 @@ class ControlNet(nn.Module):
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
-                    # Conv2d(in_channels, model_channels, 3, padding=1, dtype=self.dtype, device=device)
-                    Conv2d(in_channels, model_channels, 3, padding=1)
+                    TimestepEmbedConv2d(in_channels, model_channels, 3, padding=1)
                 )
             ]
         )
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels)])
 
         self.input_hint_block = TimestepEmbedSequential(
-                    Conv2d(hint_channels, 16, 3, padding=1, up_down=False),
-                    nn.SiLU(),
-                    Conv2d(16, 16, 3, padding=1, up_down=False),
-                    nn.SiLU(),
-                    Conv2d(16, 32, 3, padding=1, stride=2, up_down=False),
-                    nn.SiLU(),
-                    Conv2d(32, 32, 3, padding=1),
-                    nn.SiLU(),
-                    Conv2d(32, 96, 3, padding=1, stride=2, up_down=False),
-                    nn.SiLU(),
-                    Conv2d(96, 96, 3, padding=1),
-                    nn.SiLU(),
-                    Conv2d(96, 256, 3, padding=1, stride=2, up_down=False),
-                    nn.SiLU(),
-                    zero_module(Conv2d(256, model_channels, 3, padding=1, up_down=False))
+                    TimestepEmbedConv2d(hint_channels, 16, 3, padding=1, up_down=False),
+                    TimestepEmbedSiLU(), 
+                    TimestepEmbedConv2d(16, 16, 3, padding=1, up_down=False),
+                    TimestepEmbedSiLU(),
+                    TimestepEmbedConv2d(16, 32, 3, padding=1, stride=2, up_down=False),
+                    TimestepEmbedSiLU(),
+                    TimestepEmbedConv2d(32, 32, 3, padding=1),
+                    TimestepEmbedSiLU(),
+                    TimestepEmbedConv2d(32, 96, 3, padding=1, stride=2, up_down=False),
+                    TimestepEmbedSiLU(),
+                    TimestepEmbedConv2d(96, 96, 3, padding=1),
+                    TimestepEmbedSiLU(),
+                    TimestepEmbedConv2d(96, 256, 3, padding=1, stride=2, up_down=False),
+                    TimestepEmbedSiLU(),
+                    zero_module(TimestepEmbedConv2d(256, model_channels, 3, padding=1, up_down=False))
         )
 
-        input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
         for level, mult in enumerate(channel_mult):
             for nr in range(self.num_res_blocks[level]):
                 layers = [
-                    ResBlock(ch, time_embed_dim, out_channels=mult * model_channels, operations=operations)
+                    TimestepEmbedResBlock(ch, time_embed_dim, out_channels=mult * model_channels, operations=operations)
                 ]
                 ch = mult * model_channels
                 if ds in attention_resolutions:
@@ -257,7 +236,7 @@ class ControlNet(nn.Module):
                     dim_head = num_head_channels
 
                     layers.append(
-                        SpatialTransformer(
+                        TimestepEmbedSpatialTransformer(
                             ch, num_heads, dim_head, 
                             depth=transformer_depth[level], 
                             context_dim=context_dim,
@@ -266,28 +245,22 @@ class ControlNet(nn.Module):
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self.zero_convs.append(self.make_zero_conv(ch))
-                input_block_chans.append(ch)
             if level != len(channel_mult) - 1:
-                out_ch = ch
                 self.input_blocks.append(
-                    TimestepEmbedSequential(
-                        Downsample(ch, out_channels=out_ch)
-                    )
+                    TimestepEmbedSequential(TimestepEmbedDownsample(ch, out_channels=ch))
                 )
-                ch = out_ch
-                input_block_chans.append(ch)
                 self.zero_convs.append(self.make_zero_conv(ch))
                 ds *= 2
 
         num_heads = ch // num_head_channels
         dim_head = num_head_channels
         self.middle_block = TimestepEmbedSequential(
-            ResBlock(ch, time_embed_dim, operations=operations),
-            SpatialTransformer(
+            TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
+            TimestepEmbedSpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth_middle, context_dim=context_dim,
                             operations=operations
                         ),
-            ResBlock(ch, time_embed_dim, operations=operations),
+            TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
         )
         self.middle_block_out = self.make_zero_conv(ch)
 
@@ -296,22 +269,22 @@ class ControlNet(nn.Module):
 
     def make_zero_conv(self, channels):
         # no up/down
-        return TimestepEmbedSequential(zero_module(Conv2d(channels, channels, 1, padding=0, up_down=False)))
+        return TimestepEmbedSequential(zero_module(TimestepEmbedConv2d(channels, channels, 1, padding=0, up_down=False)))
 
-    def forward(self, x, hint, timesteps, context, y=None):
-        if os.environ.get('SDXL_DEBUG') is not None:
-            todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
-            todos.debug.output_var("ControlNet hint", hint)
-            todos.debug.output_var("ControlNet timesteps", timesteps)
-            todos.debug.output_var("ControlNet context", context)
-            todos.debug.output_var("ControlNet y", y)
+    def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
+        # if os.environ.get('SDXL_DEBUG') is not None:
+        #     todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+        #     todos.debug.output_var("ControlNet hint", hint)
+        #     todos.debug.output_var("ControlNet timesteps", timesteps)
+        #     todos.debug.output_var("ControlNet context", context)
+        #     todos.debug.output_var("ControlNet y", y)
 
         t_emb = timestep_embedding(timesteps, self.model_channels).to(x.dtype)
         emb = self.time_embed(t_emb).to(x.dtype)
 
         guided_hint = self.input_hint_block(hint, emb, context)
 
-        outs = []
+        outs: List[torch.Tensor] = []
 
         hs = []
         assert y.shape[0] == x.shape[0]
@@ -332,8 +305,8 @@ class ControlNet(nn.Module):
         h = self.middle_block(h, emb, context)
         outs.append(self.middle_block_out(h, emb, context))
 
-        if os.environ.get('SDXL_DEBUG') is not None:
-            todos.debug.output_var("ControlNet output", outs)
+        # if os.environ.get('SDXL_DEBUG') is not None:
+        #     todos.debug.output_var("ControlNet output", outs)
 
         return outs
 

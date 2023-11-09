@@ -57,7 +57,6 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
             param.requires_grad = False
 
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
-        # noise_schedule_config = {"timesteps": 1000, "beta_schedule": "squaredcos_cap_v2", "timestep_dim": 1280}
 
         betas = make_beta_schedule(timesteps, linear_start=linear_start, linear_end=linear_end)
         alphas = 1. - betas
@@ -84,12 +83,10 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t) * noise)
 
     def scale(self, x):
-        # re-normalize to centered mean and unit variance
         x = (x - self.data_mean) * 1. / self.data_std
         return x
 
     def unscale(self, x):
-        # back to original data stats
         x = (x * self.data_std) + self.data_mean
         return x
 
