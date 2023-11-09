@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import os
 import math
 import torch
@@ -106,7 +116,7 @@ def transformers_convert(sd, prefix_from, prefix_to, number):
     return sd
 
 
-def base_clip_state_dict(state_dict):
+def base_clip_text_state_dict(state_dict):
     keys_to_replace = {}
     replace_prefix = {}
 
@@ -123,7 +133,7 @@ def base_clip_state_dict(state_dict):
     return state_dict
 
 
-def refiner_clip_state_dict(state_dict):
+def refiner_clip_text_state_dict(state_dict):
     keys_to_replace = {}
     replace_prefix = {}
 
@@ -136,26 +146,24 @@ def refiner_clip_state_dict(state_dict):
     return state_dict
 
 
-# def load_base_clip_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-#     state_dict = state_dict_load(model_path)
-#     target_state_dict = base_clip_state_dict(state_dict)
-#     # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-#     m, u = model.load_state_dict(target_state_dict, strict=False)
-#     if len(m) > 0:
-#         print(f"Load weight from {model_path} missing keys: ", m)
-#     if len(u) > 0:
-#         print(f"Load weight from {model_path} leftover keys: ", u)        
+def load_base_clip_text_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
+    state_dict = state_dict_load(model_path)
+    target_state_dict = base_clip_text_state_dict(state_dict)
+    m, u = model.load_state_dict(target_state_dict, strict=False)
+    if len(m) > 0:
+        print(f"Load weight from {model_path} missing keys: ", m)
+    if len(u) > 0:
+        print(f"Load weight from {model_path} leftover keys: ", u)        
 
 
-# def load_refiner_clip_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
-#     state_dict = state_dict_load(model_path)
-#     state_dict = refiner_clip_state_dict(state_dict)
-#     # target_state_dict = state_dict_filter(state_dict, ["cond_stage_model."], remove_prefix=True)
-#     m, u = model.load_state_dict(target_state_dict, strict=False)
-#     if len(m) > 0:
-#         print(f"Load weight from {model_path} missing keys: ", m)
-#     if len(u) > 0:
-#         print(f"Load weight from {model_path} leftover keys: ", u)
+def load_refiner_clip_text_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
+    state_dict = state_dict_load(model_path)
+    target_state_dict = refiner_clip_text_state_dict(state_dict)
+    m, u = model.load_state_dict(target_state_dict, strict=False)
+    if len(m) > 0:
+        print(f"Load weight from {model_path} missing keys: ", m)
+    if len(u) > 0:
+        print(f"Load weight from {model_path} leftover keys: ", u)
 
 
 def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
@@ -165,20 +173,9 @@ def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
 
 def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
     state_dict = state_dict_load(model_path)
-    state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv.",
-        "decoder.", "post_quant_conv."], remove_prefix=False)
+    state_dict.pop("model_ema.decay")
+    state_dict.pop("model_ema.num_updates")    
 
-    model.load_state_dict(state_dict)
-
-
-def load_vaeencode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    state_dict = state_dict_load(model_path)
-    state_dict = state_dict_filter(state_dict, ["encoder.", "quant_conv."], remove_prefix=False)
-    model.load_state_dict(state_dict)
-
-def load_vaedecode_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    state_dict = state_dict_load(model_path)
-    state_dict = state_dict_filter(state_dict, ["decoder.", "post_quant_conv."], remove_prefix=False)
     model.load_state_dict(state_dict)
 
 
@@ -220,11 +217,8 @@ class Linear(nn.Module):
 #         return None
 
 Conv2d=nn.Conv2d
-def conv_nd(dims, *args, **kwargs):
-    if dims == 2:
-        return Conv2d(*args, **kwargs)
-    else:
-        raise ValueError(f"unsupported dimensions: {dims}")
+def conv_nd(*args, **kwargs):
+    return Conv2d(*args, **kwargs)
 
 # -------------------------
 
@@ -234,11 +228,11 @@ def count_params(model, verbose=False):
         print(f"{model.__class__.__name__} has {total_params*1.e-6:.2f} M params.")
     return total_params
 
-def make_beta_schedule(n_timestep, linear_start=1e-4, linear_end=2e-2):
+def make_beta_schedule(n_timestep:int, linear_start:float =1e-4, linear_end:float =2e-2):
     betas = torch.linspace(linear_start ** 0.5, linear_end ** 0.5, n_timestep, dtype=torch.float64) ** 2
     return betas.numpy()
 
-def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
+def timestep_embedding(timesteps, dim: int, max_period: int=10000):
     """
     Create sinusoidal timestep embeddings.
     :param timesteps: a 1-D Tensor of N indices, one per batch element.
@@ -247,18 +241,14 @@ def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
     :param max_period: controls the minimum frequency of the embeddings.
     :return: an [N x dim] Tensor of positional embeddings.
     """
-    if not repeat_only: # True
-        half = dim // 2
-        freqs = torch.exp(
-            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
-        ).to(device=timesteps.device)
-        args = timesteps[:, None].float() * freqs[None]
-        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-        if dim % 2:
-            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
-    else:
-        pdb.set_trace()
-        embedding = repeat(timesteps, 'b -> b d', d=dim)
+    half = dim // 2
+    freqs = torch.exp(
+        -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+    ).to(device=timesteps.device)
+    args = timesteps[:, None].float() * freqs[None]
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    if dim % 2:
+        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
 
@@ -270,19 +260,13 @@ def zero_module(module):
         p.detach().zero_()
     return module
 
-def avg_pool_nd(dims, *args, **kwargs):
+def avg_pool_nd(*args, **kwargs):
     """
     Create a 1D, 2D, or 3D average pooling module.
     """
     pdb.set_trace()
     
-    if dims == 1:
-        return nn.AvgPool1d(*args, **kwargs)
-    elif dims == 2:
-        return nn.AvgPool2d(*args, **kwargs)
-    elif dims == 3:
-        return nn.AvgPool3d(*args, **kwargs)
-    raise ValueError(f"unsupported dimensions: {dims}")
+    return nn.AvgPool2d(*args, **kwargs)
 
 def image_crop_32x32(image):
     B, C, H, W = image.size()
@@ -291,26 +275,7 @@ def image_crop_32x32(image):
     if 32 * H32 != H or 32 * W32 != W:
         image = F.interpolate(image, size=((H32 + 1)*32, (W32 + 1)*32), mode="bilinear", align_corners=False)
 
-    # H32 = (H // 32) * 32
-    # W32 = (W // 32) * 32
-    # if H32 != H or W32 != W:
-    #     top = (H % 32) // 2
-    #     left = (W % 32) // 2
-    #     image = image[:, 0:3, top : H32 + top, left : W32 + left]
-
     return image
-
-# def image_crop_32x32(image):
-#     B, C, H, W = image.size()
-
-#     H32 = (H // 8) * 8
-#     W32 = (W // 8) * 8
-#     if H32 != H or W32 != W:
-#         top = (H % 8) // 2
-#         left = (W % 8) // 2
-#         image = image[:, 0:3, top : H32 + top, left : W32 + left]
-
-#     return image
 
 
 def load_image(filename):
@@ -327,7 +292,6 @@ def load_clip_vision_image(filename):
     image = F.interpolate(image, size=(224, 224), mode="bilinear", align_corners=False)
     # image normal
     image = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])(image)
-    # image = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(image)
 
     return image    
 

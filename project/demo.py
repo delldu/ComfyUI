@@ -30,12 +30,11 @@ import todos
 import pdb
 
 # create models
-model = create_sdxl_base_model(skip_loara=False, skip_vision=True)
-sample_mode = model.sample_mode
-vae_encode = model.vae_encode
-vae_decode = model.vae_decode
+model = create_sdxl_base_model(skip_lora=False, skip_vision=True)
+sample_model = model.sample_model
+vae_model = model.vae_model
 clip_token = model.clip_token
-clip_text = model.clip_text
+clip_text = model.clip_text # CLIPTextEncode
 clip_vision = model.clip_vision
 
 
@@ -59,7 +58,7 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
     with torch.no_grad():
         positive_tensor = clip_text(positive_tokens)
         negative_tensor = clip_text(negative_tokens)
-        latent_image = vae_encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
+        latent_image = vae_model.encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
 
     # latent_image.fill_(0)
     positive_tensor['lora_guide'] = guide_image
@@ -71,8 +70,8 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
     latent_image = latent_image.half().cuda()
 
     with torch.no_grad():
-        sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
-        latent_output = vae_decode(sample.cpu())
+        sample = sample_model(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
+        latent_output = vae_model.decode(sample.cpu())
 
     x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 

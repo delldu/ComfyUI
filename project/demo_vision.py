@@ -22,6 +22,7 @@ from SDXL.util import (
     load_torch_image,
 )
 
+
 import todos
 import pdb
 
@@ -29,12 +30,11 @@ import pdb
 
 # create models
 model = create_sdxl_base_model(skip_lora=True, skip_vision=False)
-sample_mode = model.sample_mode
-vae_encode = model.vae_encode
-vae_decode = model.vae_decode
+sample_model = model.sample_model
+vae_model = model.vae_model
 clip_token = model.clip_token
 clip_text = model.clip_text
-clip_vision = model.clip_vision
+clip_vision = model.clip_vision # CLIPVisionEncode
 
 def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, denoise, seed):
     # input_image.shape -- (600, 458, 3), dtype=uint8
@@ -56,11 +56,9 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         # negative_tensor is dict:
         #     tensor [text_encoded] size: [1, 77, 2048], min: -809.318359, max: 853.72229, mean: 0.018757
         #     tensor [pool_encoded] size: [1, 1280], min: -4.416891, max: 3.616007, mean: 0.039642
-        latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024))
-        # ==> size: [1, 4, 128, 128], min: -7.33046, max: 9.45929, mean: -0.472631
+        latent_image = vae_model.encode(torch.zeros(1, 3, 1024, 1024))
+        # tensor [latent_image] size: [1, 4, 128, 128], min: -23.92502, max: 10.286383, mean: -3.205484
 
-    pdb.set_trace()
-    
     positive_tensor['text_encoded'].fill_(0.0)
     positive_tensor['pool_encoded'].fill_(0.0)
     negative_tensor['text_encoded'].fill_(0.0)
@@ -78,8 +76,9 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     latent_image = latent_image.cuda()
 
     with torch.no_grad():
-        sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
-        latent_output = vae_decode(sample.cpu()) # VAEDecode
+        sample = sample_model(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
+        latent_output = vae_model.decode(sample.cpu()) # VAEDecode
+
 
     x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 

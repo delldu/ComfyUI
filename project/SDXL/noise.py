@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import torch
 import torch.nn as nn
 import numpy as np
@@ -5,10 +15,9 @@ from functools import partial
 
 from SDXL.util import (
     make_beta_schedule,
+    timestep_embedding,
 )
-from SDXL.unet import (
-    Timestep,
-)
+
 from typing import Optional, Tuple
 
 import pdb
@@ -22,10 +31,20 @@ def extract_into_tensor(a, t):
     out = a.gather(-1, t)
     return out.reshape(b, 1)
 
+class Timestep(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, t):
+        return timestep_embedding(t, self.dim)
+
+    def __repr__(self):
+        return f"Timestep({self.dim})"
 
 class CLIPEmbedNoiseAugmentation(nn.Module):
     def __init__(self, max_noise_level=1000, timestep_dim=1280):
-        super(CLIPEmbedNoiseAugmentation, self).__init__()
+        super().__init__()
         self.max_noise_level = max_noise_level
         self.time_embed = Timestep(timestep_dim)
 

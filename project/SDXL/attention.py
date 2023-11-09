@@ -1,9 +1,17 @@
-import math
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from typing import Optional, Any
 
 import SDXL.util
 import pdb

@@ -297,7 +297,7 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
                 c['transformer_options'] = transformer_options
 
                 if 'model_function_wrapper' in model_options:
-                    pdb.set_trace()
+                    # ==> pdb.set_trace() for Fooocus
                     output = model_options['model_function_wrapper'](model_function, {"input": input_x, "timestep": timestep_, 
                         "c": c, "cond_or_uncond": cond_or_uncond}).chunk(batch_chunks)
                 else:
@@ -336,7 +336,7 @@ def sampling_function(model_function, x, timestep, uncond, cond, cond_scale, con
         # model_function -- model_base.py, line 53, BaseModel.apply_model
         cond, uncond = calc_cond_uncond_batch(model_function, cond, uncond, x, timestep, max_total_area, cond_concat, model_options)
         if "sampler_cfg_function" in model_options:
-            pdb.set_trace()
+            # ==> pdb.set_trace() for Fooocus
             args = {"cond": cond, "uncond": uncond, "cond_scale": cond_scale, "timestep": timestep}
             return model_options["sampler_cfg_function"](args)
         else:
@@ -878,6 +878,7 @@ class KSampler:
     def calculate_sigmas(self, steps):
         sigmas = None
 
+        # xxxx9999
         discard_penultimate_sigma = False
         if self.sampler in ['dpm_2', 'dpm_2_ancestral']:
             steps += 1

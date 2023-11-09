@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import gzip
 import html
 import os
@@ -253,7 +263,7 @@ class CLIPTextTokenizer():
     '''CLIPTextTokenizer'''
 
     def __init__(self, version):
-        super(CLIPTextTokenizer, self).__init__()
+        super().__init__()
         self.version = version
 
         if version == "base_1.0":
@@ -273,6 +283,10 @@ class CLIPTextTokenizer():
 
     def decode(self, tokens):
         return self.clip_g.decode(tokens['g'])
+
+
+def create_clip_token_model(version):
+    return CLIPTextTokenizer(version=version)
 
 
 if __name__ == "__main__":

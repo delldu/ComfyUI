@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import os
 import math
 import torch
@@ -13,13 +23,13 @@ from SDXL.noise import (
 )
 
 from SDXL.unet import (
-    Timestep,
     UNetModel,
 )
 
 from SDXL.controlnet import (
     ControlNet,
 )
+
 
 import todos
 import pdb
@@ -167,6 +177,7 @@ class KSampler(nn.Module):
             sigmas = sigmas[-(steps + 1):]
         return sigmas
 
+    # control_tensor['lora_guide', 'lora_weight']
     def forward(self, positive_tensor, negative_tensor, latent_image, cond_scale=7.5, steps=20, denoise=1.0, seed=-1):
         if 'lora_guide' in positive_tensor:
             pass

@@ -1,7 +1,19 @@
-import os
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from SDXL.util import (
+    load_vae_model_weight,
+)
 
 import todos
 import pdb
@@ -31,11 +43,9 @@ class AutoencoderKL(nn.Module):
               target: torch.nn.Identity
     """
 
-    def __init__(self, version, embed_dim=4, z_channels=4):
+    def __init__(self, embed_dim=4, z_channels=4):
         super(AutoencoderKL, self).__init__()
-        self.version = version
         self.encoder = Encoder()
-
         self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
 
         self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
@@ -45,14 +55,15 @@ class AutoencoderKL(nn.Module):
             param.requires_grad = False
 
         # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
-        # load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+
 
     def forward(self, x):
         x = self.encoder(x)
         return self.decode(x)
 
     def encode(self, x):
-        # tensor [x] size: [1, 3, 832, 1256] , min: -1.0 , max: 1.0 mean: 0.5469990968704224
+        x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
         h = self.encoder(x)
         moments = self.quant_conv(h)
 
@@ -68,54 +79,11 @@ class AutoencoderKL(nn.Module):
     def decode(self, z):
         z = self.post_quant_conv(z)
         dec = self.decoder(z)
-        return dec
-
-# create_vae_encode_model
-class VAEEncode(nn.Module):
-    def __init__(self, version, embed_dim=4, z_channels=4):
-        super().__init__()
-
-        self.version = version
-        self.encoder = Encoder()
-        self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
-
-        for param in self.parameters():
-            param.requires_grad = False
-
-    def forward(self, x):
-        x = 2.0 * x - 1.0 # convert x from [0.0, 1.0] to [-1.0, 1.0]
-        h = self.encoder(x)
-        moments = self.quant_conv(h)
-
-        # Create DiagonalGaussianDistribution
-        meanvar, logvar = torch.chunk(moments, 2, dim=1)
-        logvar = torch.clamp(logvar, -30.0, 20.0)
-        stdvar = torch.exp(0.5 * logvar)
-        output = meanvar + stdvar * torch.randn(meanvar.shape).to(device=x.device)
-
-        return output
-
-# create_vae_decode_model
-class VAEDecode(nn.Module):
-    def __init__(self, version, embed_dim=4, z_channels=4):
-        super().__init__()
-        self.version = version
-        self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
-        self.decoder = Decoder()  # model size 190 M
-
-        for param in self.parameters():
-            param.requires_grad = False
-
-
-    def forward(self, z):
-        z = self.post_quant_conv(z)
-        dec = self.decoder(z)
         # tensor [dec] size: [1, 3, 600, 456], min: -1.524532, max: 1.899036, mean: 0.059854
-        # tensor [zout] size: [1, 3, 600, 456], min: -1.649717, max: 1.515323, mean: 0.132423
-
         out = ((dec + 1.0)/2.0).clamp(0.0, 1.0)
 
         return out
+
 
 def nonlinearity(x):
     return x * torch.sigmoid(x) # swish, F.silu
@@ -232,10 +200,8 @@ class Encoder(nn.Module):
         z_channels=4,
     ):
         super().__init__()
-
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
-        # self.in_channels = in_channels
 
         # downsampling
         self.conv_in = nn.Conv2d(in_channels, ch, kernel_size=3, stride=1, padding=1)
@@ -296,10 +262,11 @@ class Encoder(nn.Module):
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
+
         return h
 
 class Decoder(nn.Module):
-    def __init__(self, *,
+    def __init__(self,
         ch=128,
         out_ch=3,
         ch_mult=(1, 2, 4, 4),
@@ -313,7 +280,6 @@ class Decoder(nn.Module):
 
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
-        # self.in_channels = in_channels
 
         # compute in_ch_mult, block_in and curr_res at lowest res
         in_ch_mult = (1,) + tuple(ch_mult)
@@ -352,7 +318,6 @@ class Decoder(nn.Module):
 
 
     def forward(self, z):
-        # z to block_in
         h = self.conv_in(z)
 
         # middle
@@ -360,21 +325,20 @@ class Decoder(nn.Module):
         h = self.mid.attn_1(h)
         h = self.mid.block_2(h)
 
-        # xxxx9999
-        # upsampling
-        for i_level in reversed(range(self.num_resolutions)):
-            for i_block in range(self.num_res_blocks + 1):
-                h = self.up[i_level].block[i_block](h)
-            if i_level != 0:
-                h = self.up[i_level].upsample(h)
-        # xxxx8888
-        # for i in range(self.num_resolutions):
-        #     h = self.up_layer(self.num_resolutions - i - 1, h)
+        # # upsampling
+        # for i_level in reversed(range(self.num_resolutions)):
+        #     for i_block in range(self.num_res_blocks + 1):
+        #         h = self.up[i_level].block[i_block](h)
+        #     if i_level != 0:
+        #         h = self.up[i_level].upsample(h)
+        for i in range(self.num_resolutions):
+            h = self.up_layer(self.num_resolutions - i - 1, h)
 
         # end
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
+
         return h
 
     def up_layer(self, i:int, h):
@@ -388,39 +352,15 @@ class Decoder(nn.Module):
 
 
 def create_vae_model():
-    model = AutoencoderKL(version="base_1.0")
-    model = model.half()
-    model = model.eval()
-
-    return model
-
-
-def create_vae_encode_model():
-    # output: SdxlVaeEncode
-
-    model = VAEEncode(version="base_1.0")
+    model = AutoencoderKL()
     # model = model.half()
     model = model.eval()
-    # model = model.cuda()
-
-    return model
-
-
-def create_vae_decode_model():
-    # output: SdxlVaeDecode
-
-    model = VAEDecode(version="base_1.0")
-    # model = model.half()
-    model = model.eval()
-    # model = model.cuda()
 
     return model
 
 
 if __name__ == "__main__":
     model = create_vae_model()
-    # model = create_vae_encode_model()
-    # model = create_vae_decode_model()
 
-    # model = torch.jit.script(model)
+    model = torch.jit.script(model)
     print(model)

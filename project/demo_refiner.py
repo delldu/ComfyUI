@@ -29,9 +29,8 @@ import pdb
 
 # create models
 model = create_sdxl_refiner_model()
-sample_mode = model.sample_mode
-vae_encode = model.vae_encode
-vae_decode = model.vae_decode
+sample_model = model.sample_model
+vae_model = model.vae_model
 clip_token = model.clip_token
 clip_text = model.clip_text
 
@@ -52,9 +51,9 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
         negative_tensor = clip_text(negative_tokens)
 
         if input_image is not None:
-            latent_image = vae_encode(load_torch_image(input_image))
+            latent_image = vae_model.encode(load_torch_image(input_image))
         else:
-            latent_image = vae_encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
+            latent_image = vae_model.encode(torch.zeros(1, 3, 1024, 1024)) # torch.zeros([1, 4, 128, 128])
 
 
     for k, v in positive_tensor.items():
@@ -64,8 +63,8 @@ def process(prompt, a_prompt, n_prompt, input_image, cond_scale, time_steps, den
     latent_image = latent_image.cuda()
 
     with torch.no_grad():
-        sample = sample_mode(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
-        latent_output = vae_decode(sample.cpu())
+        sample = sample_model(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
+        latent_output = vae_model.decode(sample.cpu())
 
     x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 

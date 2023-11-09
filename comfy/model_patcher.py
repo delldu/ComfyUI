@@ -4,6 +4,7 @@ import inspect
 
 import comfy.utils
 import comfy.model_management
+import pdb
 
 class ModelPatcher:
     def __init__(self, model, load_device, offload_device, size=0, current_device=None):
@@ -124,7 +125,7 @@ class ModelPatcher:
         p = set()
         for k in patches:
             if k in self.model_keys:
-                pdb.set_trace()
+                # ==> pdb.set_trace() for Fooocus
                 p.add(k)
                 current_patches = self.patches.get(k, [])
                 current_patches.append((strength_patch, patches[k], strength_model))
@@ -172,7 +173,7 @@ class ModelPatcher:
             else:
                 temp_weight = weight.to(torch.float32, copy=True)
             out_weight = self.calculate_weight(self.patches[key], temp_weight, key).to(weight.dtype)
-            pdb.set_trace()
+            # ==> pdb.set_trace() for Fooocus
             comfy.utils.set_attr(self.model, key, out_weight)
             del temp_weight
 

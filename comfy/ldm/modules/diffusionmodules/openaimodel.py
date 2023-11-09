@@ -178,9 +178,11 @@ class ResBlock(TimestepBlock):
         self.updown = up or down
 
         if up:
+            pdb.set_trace()
             self.h_upd = Upsample(channels, False, dims, dtype=dtype, device=device)
             self.x_upd = Upsample(channels, False, dims, dtype=dtype, device=device)
         elif down:
+            pdb.set_trace()
             self.h_upd = Downsample(channels, False, dims, dtype=dtype, device=device)
             self.x_upd = Downsample(channels, False, dims, dtype=dtype, device=device)
         else:
@@ -225,6 +227,7 @@ class ResBlock(TimestepBlock):
 
     def _forward(self, x, emb):
         if self.updown:
+            pdb.set_trace()
             in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
             h = in_rest(x)
             h = self.h_upd(h)
@@ -623,9 +626,10 @@ class UNetModel(nn.Module):
             todos.debug.output_var("UNetModel timesteps", timesteps)
             todos.debug.output_var("UNetModel context", context)
             todos.debug.output_var("UNetModel y", y)
-            todos.debug.output_var("UNetModel control['input']", control['input'])
-            todos.debug.output_var("UNetModel control['middle']", control['middle'])
-            todos.debug.output_var("UNetModel control['output']", control['output'])
+            if control is not None:
+                todos.debug.output_var("UNetModel control['input']", control['input'])
+                todos.debug.output_var("UNetModel control['middle']", control['middle'])
+                todos.debug.output_var("UNetModel control['output']", control['output'])
 
         transformer_options["original_shape"] = list(x.shape)
         transformer_options["current_index"] = 0

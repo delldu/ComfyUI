@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 #taken from: https://github.com/lllyasviel/ControlNet and modified
 import os
 import torch
@@ -11,6 +21,7 @@ from SDXL.util import (
     timestep_embedding,
     state_dict_load,
     state_dict_filter,
+    load_model_weight,
 )
 
 from SDXL.attention import (
@@ -74,7 +85,6 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
 class ControlLoraOps:
     class Linear(nn.Module):
         def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
-            # factory_kwargs = {'device': device, 'dtype': dtype}
             super().__init__()
             self.dtype = torch.float16
             self.in_features = in_features
@@ -107,7 +117,6 @@ class ControlLoraOps:
             dilation=1,
             groups=1,
             bias=True,
-            padding_mode='zeros',
             device=None,
             dtype=None,
             up_down=True,
@@ -119,10 +128,7 @@ class ControlLoraOps:
             self.stride = stride
             self.padding = padding
             self.dilation = dilation
-            self.transposed = False
-            self.output_padding = 0
             self.groups = groups
-            self.padding_mode = padding_mode
 
             self.weight = nn.Parameter(torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False)
             self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
@@ -154,17 +160,12 @@ class ControlLoraOps:
             s += ")"
             return s
 
-    def conv_nd(self, dims, *args, **kwargs):
-        if dims == 2:
-            return self.Conv2d(*args, **kwargs)
-        else:
-            raise ValueError(f"unsupported dimensions: {dims}")
+    def conv_nd(self, *args, **kwargs):
+        return self.Conv2d(*args, **kwargs)
 
 # control_model
 class ControlNet(nn.Module):
-    def __init__(
-        self,
-        # image_size=32,
+    def __init__(self,
         in_channels=4,
         model_channels=320,
         hint_channels=3,
@@ -172,8 +173,6 @@ class ControlNet(nn.Module):
         attention_resolutions=[2, 4],
         dropout=0.0,
         channel_mult=(1, 2, 4),
-        conv_resample=True,
-        dims=2, # 2D
         use_fp16=True,
         num_head_channels=64,
         transformer_depth=[0, 2, 10],     # custom transformer support
@@ -184,18 +183,13 @@ class ControlNet(nn.Module):
         operations=ControlLoraOps(), #SDXL.util
     ):
         super().__init__()
-        # operations = <comfy.controlnet.ControlLoraOps object>
 
-        self.dims = dims
-        # self.image_size = image_size
-        # self.in_channels = in_channels
         self.model_channels = model_channels
         self.num_res_blocks = len(channel_mult) * [num_res_blocks]
 
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
         self.channel_mult = channel_mult
-        self.conv_resample = conv_resample
         self.dtype = torch.float16 if use_fp16 else torch.float32
         self.num_head_channels = num_head_channels
 
@@ -218,28 +212,28 @@ class ControlNet(nn.Module):
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
-                    operations.conv_nd(dims, in_channels, model_channels, 3, padding=1, dtype=self.dtype, device=device)
+                    operations.conv_nd(in_channels, model_channels, 3, padding=1, dtype=self.dtype, device=device)
                 )
             ]
         )
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels, operations=operations)])
 
         self.input_hint_block = TimestepEmbedSequential(
-                    operations.conv_nd(dims, hint_channels, 16, 3, padding=1, up_down=False),
+                    operations.conv_nd(hint_channels, 16, 3, padding=1, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 16, 16, 3, padding=1, up_down=False),
+                    operations.conv_nd(16, 16, 3, padding=1, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 16, 32, 3, padding=1, stride=2, up_down=False),
+                    operations.conv_nd(16, 32, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 32, 32, 3, padding=1),
+                    operations.conv_nd(32, 32, 3, padding=1),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 32, 96, 3, padding=1, stride=2, up_down=False),
+                    operations.conv_nd(32, 96, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 96, 96, 3, padding=1),
+                    operations.conv_nd(96, 96, 3, padding=1),
                     nn.SiLU(),
-                    operations.conv_nd(dims, 96, 256, 3, padding=1, stride=2, up_down=False),
+                    operations.conv_nd(96, 256, 3, padding=1, stride=2, up_down=False),
                     nn.SiLU(),
-                    zero_module(operations.conv_nd(dims, 256, model_channels, 3, padding=1, up_down=False))
+                    zero_module(operations.conv_nd(256, model_channels, 3, padding=1, up_down=False))
         )
 
         input_block_chans = [model_channels]
@@ -250,7 +244,6 @@ class ControlNet(nn.Module):
                 layers = [
                     ResBlock(ch, time_embed_dim, dropout,
                         out_channels=mult * model_channels,
-                        dims=dims,
                         operations=operations
                     )
                 ]
@@ -275,7 +268,7 @@ class ControlNet(nn.Module):
                 out_ch = ch
                 self.input_blocks.append(
                     TimestepEmbedSequential(
-                        Downsample(ch, conv_resample, dims=dims, out_channels=out_ch, operations=operations)
+                        Downsample(ch, True, out_channels=out_ch, operations=operations)
                     )
                 )
                 ch = out_ch
@@ -287,7 +280,6 @@ class ControlNet(nn.Module):
         dim_head = num_head_channels
         self.middle_block = TimestepEmbedSequential(
             ResBlock(ch, time_embed_dim, dropout,
-                dims=dims,
                 operations=operations
             ),
             SpatialTransformer(  # always uses a self-attn
@@ -296,7 +288,6 @@ class ControlNet(nn.Module):
                             operations=operations
                         ),
             ResBlock(ch, time_embed_dim, dropout,
-                dims=dims,
                 operations=operations
             ),
         )
@@ -307,7 +298,7 @@ class ControlNet(nn.Module):
 
     def make_zero_conv(self, channels, operations=None):
         # no up/down
-        return TimestepEmbedSequential(zero_module(operations.conv_nd(self.dims, channels, channels, 1, padding=0, up_down=False)))
+        return TimestepEmbedSequential(zero_module(operations.conv_nd(channels, channels, 1, padding=0, up_down=False)))
 
     def forward(self, x, hint, timesteps, context, y=None):
         if os.environ.get('SDXL_DEBUG') is not None:
@@ -317,7 +308,7 @@ class ControlNet(nn.Module):
             todos.debug.output_var("ControlNet context", context)
             todos.debug.output_var("ControlNet y", y)
 
-        t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False).to(self.dtype)
+        t_emb = timestep_embedding(timesteps, self.model_channels).to(self.dtype)
         emb = self.time_embed(t_emb)
 
         guided_hint = self.input_hint_block(hint, emb, context)
@@ -349,45 +340,75 @@ class ControlNet(nn.Module):
         return outs
 
 
-def canny_control_lora():
-    # output: SdxlCannyLora
-
+def create_canny_control_lora():
     model = ControlNet()
+
+    # checkpoint = "models/canny_lora.pth"
+    # if not os.path.exists(checkpoint):
+    #     load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
+    #     model = model.half()
+    #     torch.save(model.state_dict(), checkpoint)
+    # else:
+    #     load_model_weight(model, checkpoint)
+
     model = model.half()
-    load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
     model = model.eval()
     return model
 
-def depth_control_lora():
-    # output: SdxlDepthLora
-
+def create_depth_control_lora():
     model = ControlNet()
+
+    # checkpoint = "models/depth_lora.pth"
+    # if not os.path.exists(checkpoint):
+    #     load_ctrl_lora_weights(model, model_path="models/control-lora-depth-rank128.safetensors")
+    #     model = model.half()
+    #     torch.save(model.state_dict(), checkpoint)
+    # else:
+    #     load_model_weight(model, checkpoint)
+
     model = model.half()
-    load_ctrl_lora_weights(model, model_path="models/control-lora-depth-rank128.safetensors")
     model = model.eval()
     return model
 
-def color_control_lora():
-    # output: SdxlColorLora
-
+def create_color_control_lora():
     model = ControlNet()
+
+    # checkpoint = "models/color_lora.pth"
+    # if not os.path.exists(checkpoint):
+    #     load_ctrl_lora_weights(model, model_path="models/control-lora-recolor-rank128.safetensors")
+
+    #     model = model.half()
+    #     torch.save(model.state_dict(), checkpoint)
+    # else:
+    #     load_model_weight(model, checkpoint)
+
     model = model.half()
-    load_ctrl_lora_weights(model, model_path="models/control-lora-recolor-rank128.safetensors")
     model = model.eval()
     return model
 
-def sketch_control_lora():
-    # output: SdxlSketchLora
-
+def create_sketch_control_lora():
     model = ControlNet()
+
+    # checkpoint = "models/sketch_lora.pth"
+    # if not os.path.exists(checkpoint):
+    #     load_ctrl_lora_weights(model, model_path="models/control-lora-sketch-rank128-metadata.safetensors")
+
+    #     model = model.half()
+    #     torch.save(model.state_dict(), checkpoint)
+    # else:
+    #     load_model_weight(model, checkpoint)
+
     model = model.half()
-    load_ctrl_lora_weights(model, model_path="models/control-lora-sketch-rank128.safetensors")
     model = model.eval()
     return model
 
 if __name__ == "__main__":
     import todos
-    model = canny_control_lora()
-    # model = torch.jit.script(model)
+    model = create_canny_control_lora()
+    model = torch.jit.script(model)
     print(model)
     # todos.debug.output_weight(model.state_dict())
+
+    # model = create_depth_control_lora()
+    # model = create_color_control_lora()
+    # # model = create_sketch_control_lora()

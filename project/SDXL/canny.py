@@ -1,3 +1,13 @@
+"""SDXL 1.0 Model Package."""  # coding=utf-8
+#
+# /************************************************************************************
+# ***
+# ***    Copyright Dell 2023(18588220928@163.com) All Rights Reserved.
+# ***
+# ***    File Author: Dell, Wed 02 Aug 2023 06:43:47 AM CST
+# ***
+# ************************************************************************************/
+#
 #From https://github.com/kornia/kornia
 import math
 
@@ -67,28 +77,6 @@ def get_sobel_kernel2d(device=None, dtype=None):
     return torch.stack([kernel_x, kernel_y])
 
 def spatial_gradient(input, normalized: bool = True):
-    r"""Compute the first order image derivative in both x and y using a Sobel operator.
-    .. image:: _static/img/spatial_gradient.png
-    Args:
-        input: input image tensor with shape :math:`(B, C, H, W)`.
-        mode: derivatives modality, can be: `sobel` or `diff`.
-        order: the order of the derivatives.
-        normalized: whether the output is normalized.
-    Return:
-        the derivatives of the input feature map. with shape :math:`(B, C, 2, H, W)`.
-    .. note::
-       See a working example `here <https://kornia-tutorials.readthedocs.io/en/latest/
-       filtering_edges.html>`__.
-    Examples:
-        >>> input = torch.rand(1, 3, 4, 4)
-        >>> output = spatial_gradient(input)  # 1x3x2x4x4
-        >>> output.shape
-        torch.Size([1, 3, 2, 4, 4])
-    """
-    # KORNIA_CHECK_IS_TENSOR(input)
-    # KORNIA_CHECK_SHAPE(input, ['B', 'C', 'H', 'W'])
-
-    # allocate kernel
     kernel = get_sobel_kernel2d(device=input.device, dtype=input.dtype)
     if normalized:
         kernel = normalize_kernel2d(kernel)
@@ -105,28 +93,6 @@ def spatial_gradient(input, normalized: bool = True):
     return out.reshape(b, c, out_channels, h, w)
 
 def rgb_to_grayscale(image, rgb_weights = None):
-    r"""Convert a RGB image to grayscale version of image.
-
-    .. image:: _static/img/rgb_to_grayscale.png
-
-    The image data is assumed to be in the range of (0, 1).
-
-    Args:
-        image: RGB image to be converted to grayscale with shape :math:`(*,3,H,W)`.
-        rgb_weights: Weights that will be applied on each channel (RGB).
-            The sum of the weights should add up to one.
-    Returns:
-        grayscale version of the image with shape :math:`(*,1,H,W)`.
-
-    .. note::
-       See a working example `here <https://kornia-tutorials.readthedocs.io/en/latest/
-       color_conversions.html>`__.
-
-    Example:
-        >>> input = torch.rand(2, 3, 4, 5)
-        >>> gray = rgb_to_grayscale(input) # 2x1x4x5
-    """
-
     if len(image.shape) < 3 or image.shape[-3] != 3:
         raise ValueError(f"Input size must have a shape of (*, 3, H, W). Got {image.shape}")
 
@@ -160,41 +126,6 @@ def canny(
     hysteresis = True,
     eps = 1e-6,
 ):
-    r"""Find edges of the input image and filters them using the Canny algorithm.
-    .. image:: _static/img/canny.png
-    Args:
-        input: input image tensor with shape :math:`(B,C,H,W)`.
-        low_threshold: lower threshold for the hysteresis procedure.
-        high_threshold: upper threshold for the hysteresis procedure.
-        kernel_size: the size of the kernel for the gaussian blur.
-        sigma: the standard deviation of the kernel for the gaussian blur.
-        hysteresis: if True, applies the hysteresis edge tracking.
-            Otherwise, the edges are divided between weak (0.5) and strong (1) edges.
-        eps: regularization number to avoid NaN during backprop.
-    Returns:
-        - the canny edge magnitudes map, shape of :math:`(B,1,H,W)`.
-        - the canny edge detection filtered by thresholds and hysteresis, shape of :math:`(B,1,H,W)`.
-    .. note::
-       See a working example `here <https://kornia-tutorials.readthedocs.io/en/latest/
-       canny.html>`__.
-    Example:
-        >>> input = torch.rand(5, 3, 4, 4)
-        >>> magnitude, edges = canny(input)  # 5x3x4x4
-        >>> magnitude.shape
-        torch.Size([5, 1, 4, 4])
-        >>> edges.shape
-        torch.Size([5, 1, 4, 4])
-    """
-    # KORNIA_CHECK_IS_TENSOR(input)
-    # KORNIA_CHECK_SHAPE(input, ['B', 'C', 'H', 'W'])
-    # KORNIA_CHECK(
-    #     low_threshold <= high_threshold,
-    #     "Invalid input thresholds. low_threshold should be smaller than the high_threshold. Got: "
-    #     f"{low_threshold}>{high_threshold}",
-    # )
-    # KORNIA_CHECK(0 < low_threshold < 1, f'Invalid low threshold. Should be in range (0, 1). Got: {low_threshold}')
-    # KORNIA_CHECK(0 < high_threshold < 1, f'Invalid high threshold. Should be in range (0, 1). Got: {high_threshold}')
-
     device = input.device
     dtype = input.dtype
 
