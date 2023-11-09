@@ -118,6 +118,7 @@ def create_sdxl_base_model(skip_lora=True, skip_vision=True):
     else:
         load_ctrl_lora_weights(model.sample_model.lora_model, model_path="models/control-lora-canny-rank128.safetensors", 
             unet_weight=model_sd)
+        model.sample_model.lora_model.half().eval()
 
     model.sample_model.half().eval().cuda()
 

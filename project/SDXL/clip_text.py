@@ -10,6 +10,7 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from SDXL.util import (
     DictToClass,
@@ -20,17 +21,6 @@ from typing import Dict, List, Optional
 
 import todos
 import pdb
-
-# class GELUActivation(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.act = nn.functional.gelu
-
-#     def forward(self, input):
-#         return self.act(input)
-
-#     def __repr__(self):
-#         return f"GELUActivation({self.act})"
 
 class QuickGELUActivation(nn.Module):
     """
@@ -103,8 +93,8 @@ class CLIPAttention(nn.Module):
             attn_weights = attn_weights.view(B, self.num_heads, L, src_len) + causal_attention_mask
             attn_weights = attn_weights.view(B * self.num_heads, L, src_len)
 
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training) # self.training
+        attn_weights = F.softmax(attn_weights, dim=-1)
+        attn_probs = F.dropout(attn_weights, p=self.dropout, training=self.training) # self.training
 
         attn_output = torch.bmm(attn_probs, value_states)
         attn_output = attn_output.view(B, self.num_heads, L, self.head_dim)

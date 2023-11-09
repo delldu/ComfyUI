@@ -11,7 +11,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
+from einops.layers.torch import Rearrange
+
+from typing import Optional
+
+# from einops import rearrange
 
 import SDXL.util
 import pdb
@@ -28,9 +32,12 @@ def default(val, d):
 
 # feedforward
 class GEGLU(nn.Module):
-    def __init__(self, dim_in, dim_out, dtype=None, device=None, operations=SDXL.util):
+    # def __init__(self, dim_in, dim_out, dtype=None, device=None, operations=SDXL.util):
+    #     super().__init__()
+    #     self.proj = operations.Linear(dim_in, dim_out * 2, dtype=dtype, device=device)
+    def __init__(self, dim_in, dim_out, operations=SDXL.util):
         super().__init__()
-        self.proj = operations.Linear(dim_in, dim_out * 2, dtype=dtype, device=device)
+        self.proj = operations.Linear(dim_in, dim_out * 2)
 
     def forward(self, x):
         x, gate = self.proj(x).chunk(2, dim=-1)
@@ -38,38 +45,38 @@ class GEGLU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, dim_out=None, mult=4, glu=True, dropout=0., dtype=None, device=None, 
-        operations=SDXL.util):
+    # def __init__(self, dim, dim_out=None, mult=4, dtype=None, device=None, 
+    #     operations=SDXL.util):
+    def __init__(self, dim, dim_out=None, mult=4, dtype=None, operations=SDXL.util):
+
         super().__init__()
         inner_dim = int(dim * mult)
         dim_out = default(dim_out, dim)
-
-        if not glu:
-            pdb.set_trace()
-
-        project_in = nn.Sequential(
-            operations.Linear(dim, inner_dim, dtype=dtype, device=device),
-            nn.GELU()
-        ) if not glu else GEGLU(dim, inner_dim, dtype=dtype, device=device, operations=operations)
+        # project_in = GEGLU(dim, inner_dim, dtype=dtype, device=device, operations=operations)
+        project_in = GEGLU(dim, inner_dim, operations=operations)
 
         self.net = nn.Sequential(
             project_in,
-            nn.Dropout(dropout),
-            operations.Linear(inner_dim, dim_out, dtype=dtype, device=device)
+            nn.Dropout(0.0),
+            # operations.Linear(inner_dim, dim_out, dtype=dtype, device=device)
+            operations.Linear(inner_dim, dim_out)
         )
 
     def forward(self, x):
         return self.net(x)
 
 
-def Normalize(in_channels, dtype=None, device=None):
-    return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True, dtype=dtype, device=device)
+# def Normalize(in_channels, dtype=None, device=None):
+#     return nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True, dtype=dtype, device=device)
+
+def Normalize(in_channels):
+    return nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
 
 
-class CrossAttentionPytorch(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0., dtype=None, 
-        device=None, operations=SDXL.util):
-        # super(CrossAttentionPytorch, self).__init__()
+class CrossAttention(nn.Module):
+    # def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dtype=None, 
+    #     device=None, operations=SDXL.util):
+    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, operations=SDXL.util):
         super().__init__()
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
@@ -77,70 +84,85 @@ class CrossAttentionPytorch(nn.Module):
         self.heads = heads
         self.dim_head = dim_head
 
-        self.to_q = operations.Linear(query_dim, inner_dim, bias=False, dtype=dtype, device=device)
-        self.to_k = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
-        self.to_v = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
+        # self.to_q = operations.Linear(query_dim, inner_dim, bias=False, dtype=dtype, device=device)
+        # self.to_k = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
+        # self.to_v = operations.Linear(context_dim, inner_dim, bias=False, dtype=dtype, device=device)
+
+        # self.to_out = nn.Sequential(
+        #                 operations.Linear(inner_dim, query_dim, dtype=dtype, device=device),
+        #                 nn.Dropout(0.0),
+        #             )
+        self.to_q = operations.Linear(query_dim, inner_dim, bias=False)
+        self.to_k = operations.Linear(context_dim, inner_dim, bias=False)
+        self.to_v = operations.Linear(context_dim, inner_dim, bias=False)
 
         self.to_out = nn.Sequential(
-                        operations.Linear(inner_dim, query_dim, dtype=dtype, device=device),
-                        nn.Dropout(dropout),
+                        operations.Linear(inner_dim, query_dim),
+                        nn.Dropout(0.0),
                     )
 
-    def forward(self, x, context=None, value=None, mask=None):
+        self.BxHxNxD_BxNxHD = Rearrange('b h n d -> b n (h d)')
+        self.BxNxHxD_BHxNxD = Rearrange('b n h d -> (b h) n d')
+        
+    def forward(self, x, context=None):
         q = self.to_q(x)
         context = default(context, x)
         k = self.to_k(context)
-        if value is not None:
-            pdb.set_trace()
-            v = self.to_v(value)
-            del value
-        else:
-            v = self.to_v(context)
+        v = self.to_v(context)
 
         b, _, _ = q.shape
-        q, k, v = map(
-            lambda t: t.view(b, -1, self.heads, self.dim_head).transpose(1, 2),
-            (q, k, v),
-        )
+        # q, k, v = map(
+        #     lambda t: t.view(b, -1, self.heads, self.dim_head).transpose(1, 2),
+        #     (q, k, v),
+        # )
+        q = q.view(b, -1, self.heads, self.dim_head).transpose(1, 2)
+        k = k.view(b, -1, self.heads, self.dim_head).transpose(1, 2)
+        v = v.view(b, -1, self.heads, self.dim_head).transpose(1, 2)
 
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False)
-
-        if exists(mask):
-            raise NotImplementedError
         out = out.transpose(1, 2).reshape(b, -1, self.heads * self.dim_head)
 
         return self.to_out(out)
 
-# print("Using pytorch cross attention")
-CrossAttention = CrossAttentionPytorch
 class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True,
-                 dtype=None, device=None, operations=SDXL.util):
-        # super(BasicTransformerBlock, self).__init__()
+    # def __init__(self, dim, n_heads, d_head, context_dim=None, 
+    #              dtype=None, device=None, operations=SDXL.util):
+    #     super().__init__()
+
+    #     self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, 
+    #                           context_dim=None, dtype=dtype, device=device, operations=operations)
+    #     self.ff = FeedForward(dim, dtype=dtype, device=device, operations=operations)
+    #     self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
+    #                           heads=n_heads, dim_head=d_head, dtype=dtype, device=device, operations=operations)  # is self-attn if context is none
+    #     self.norm1 = nn.LayerNorm(dim, dtype=dtype, device=device)
+    #     self.norm2 = nn.LayerNorm(dim, dtype=dtype, device=device)
+    #     self.norm3 = nn.LayerNorm(dim, dtype=dtype, device=device)
+    #     self.n_heads = n_heads
+    #     self.d_head = d_head
+
+    def __init__(self, dim, n_heads, d_head, context_dim=None, operations=SDXL.util):
         super().__init__()
 
-        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout,
-                              context_dim=None, dtype=dtype, device=device, operations=operations)
-        self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff, dtype=dtype, device=device, operations=operations)
+        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, 
+                              context_dim=None, operations=operations)
+        self.ff = FeedForward(dim, operations=operations)
         self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
-                              heads=n_heads, dim_head=d_head, dropout=dropout, dtype=dtype, device=device, operations=operations)  # is self-attn if context is none
-        self.norm1 = nn.LayerNorm(dim, dtype=dtype, device=device)
-        self.norm2 = nn.LayerNorm(dim, dtype=dtype, device=device)
-        self.norm3 = nn.LayerNorm(dim, dtype=dtype, device=device)
-        self.checkpoint = checkpoint
+                              heads=n_heads, dim_head=d_head, operations=operations)  # is self-attn if context is none
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.norm3 = nn.LayerNorm(dim)
         self.n_heads = n_heads
         self.d_head = d_head
 
-
-    def forward(self, x, context=None, transformer_options={}):
+    def forward(self, x, context=None):
         n = self.norm1(x)
         context_attn1 = None
-        n = self.attn1(n, context=context_attn1, value=None)
+        n = self.attn1(n, context=context_attn1)
 
         x += n
         n = self.norm2(x)
         context_attn2 = context
-        n = self.attn2(n, context=context_attn2, value=None)
+        n = self.attn2(n, context=context_attn2)
 
         x += n
         x = self.ff(self.norm3(x)) + x
@@ -154,65 +176,57 @@ class SpatialTransformer(nn.Module):
     and reshape to b, t, d.
     Then apply standard transformer action.
     Finally, reshape to image
-    NEW: use_linear for more efficiency instead of the 1x1 convs
     """
+    # def __init__(self, in_channels, n_heads, d_head,
+    #              depth=1, context_dim=None,
+    #              dtype=None, device=None, operations=SDXL.util):
     def __init__(self, in_channels, n_heads, d_head,
-                 depth=1, dropout=0., context_dim=None,
-                 use_linear=True,
-                 dtype=None, device=None, operations=SDXL.util):
+                 depth=1, context_dim=None,
+                 operations=SDXL.util):
+
         super().__init__()
         if exists(context_dim) and not isinstance(context_dim, list):
             context_dim = [context_dim] * depth
-        self.in_channels = in_channels
         inner_dim = n_heads * d_head
-        self.norm = Normalize(in_channels, dtype=dtype, device=device)
-        if not use_linear:
-            pdb.set_trace()
-            self.proj_in = operations.Conv2d(in_channels,
-                                     inner_dim,
-                                     kernel_size=1,
-                                     stride=1,
-                                     padding=0, dtype=dtype, device=device)
-        else:
-            self.proj_in = operations.Linear(in_channels, inner_dim, dtype=dtype, device=device)
+        # self.norm = Normalize(in_channels, dtype=dtype, device=device)
+        # self.proj_in = operations.Linear(in_channels, inner_dim, dtype=dtype, device=device)
+
+        # self.transformer_blocks = nn.ModuleList(
+        #     [BasicTransformerBlock(inner_dim, n_heads, d_head, context_dim=context_dim[d],
+        #                            dtype=dtype, device=device, operations=operations)
+        #         for d in range(depth)]
+        # )
+        # self.proj_out = operations.Linear(in_channels, inner_dim, dtype=dtype, device=device)
+
+        self.norm = Normalize(in_channels)
+        self.proj_in = operations.Linear(in_channels, inner_dim)
 
         self.transformer_blocks = nn.ModuleList(
-            [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim[d],
-                                   dtype=dtype, device=device, operations=operations)
+            [BasicTransformerBlock(inner_dim, n_heads, d_head, context_dim=context_dim[d],
+                                   operations=operations)
                 for d in range(depth)]
         )
-        if not use_linear:
-            pdb.set_trace()
-            self.proj_out = operations.Conv2d(inner_dim,in_channels,
-                                                  kernel_size=1,
-                                                  stride=1,
-                                                  padding=0, dtype=dtype, device=device)
-        else:
-            self.proj_out = operations.Linear(in_channels, inner_dim, dtype=dtype, device=device)
-        self.use_linear = use_linear
+        self.proj_out = operations.Linear(in_channels, inner_dim)
 
-    def forward(self, x, context=None, transformer_options={}):
+        self.BxCxHxW_BxHWxC = Rearrange('b c h w -> b (h w) c')
+        self.BxHxWxC_BxCxHxW = Rearrange('b h w c -> b c h w')
+
+    def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention
         if not isinstance(context, list):
             context = [context] * len(self.transformer_blocks)
         b, c, h, w = x.shape
         x_in = x
         x = self.norm(x)
-        if not self.use_linear:
-            pdb.set_trace()
-            x = self.proj_in(x)
-        x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
-        if self.use_linear:
-            x = self.proj_in(x)
+        # x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
+        x = self.BxCxHxW_BxHWxC(x).contiguous()
+        x = self.proj_in(x)
             
         for i, block in enumerate(self.transformer_blocks):
-            transformer_options["block_index"] = i
-            x = block(x, context=context[i], transformer_options=transformer_options)
-        if self.use_linear:
-            x = self.proj_out(x)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
-        if not self.use_linear:
-            pdb.set_trace()
-            x = self.proj_out(x)
+            x = block(x, context=context[i])
+        x = self.proj_out(x)
+        # x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()
+        x = x.reshape(b, h, w, c)
+        x = self.BxHxWxC_BxCxHxW(x).contiguous()
         return x + x_in
 

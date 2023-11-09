@@ -116,7 +116,7 @@ class Upsample(nn.Module):
 
 
 class ResnetBlock(nn.Module):
-    def __init__(self, *, in_channels, out_channels=None, dropout):
+    def __init__(self, *, in_channels, out_channels=None):
         super(ResnetBlock, self).__init__()
         self.in_channels = in_channels
         out_channels = in_channels if out_channels is None else out_channels
@@ -127,7 +127,7 @@ class ResnetBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
         self.norm2 = Normalize(out_channels)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(0.0)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         if self.in_channels != self.out_channels:
             self.nin_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
@@ -194,7 +194,6 @@ class Encoder(nn.Module):
         out_ch=3,
         ch_mult=(1, 2, 4, 4),
         num_res_blocks=2,
-        dropout=0.0,
         in_channels=3,
         resolution=256,
         z_channels=4,
@@ -215,7 +214,7 @@ class Encoder(nn.Module):
             block_in = ch * in_ch_mult[i_level]
             block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks):
-                block.append(ResnetBlock(in_channels=block_in, out_channels=block_out, dropout=dropout))
+                block.append(ResnetBlock(in_channels=block_in, out_channels=block_out))
                 block_in = block_out
             down = nn.Module()
             down.block = block
@@ -229,9 +228,9 @@ class Encoder(nn.Module):
 
         # middle
         self.mid = nn.Module()
-        self.mid.block_1 = ResnetBlock(in_channels=block_in, out_channels=block_in, dropout=dropout)
+        self.mid.block_1 = ResnetBlock(in_channels=block_in, out_channels=block_in)
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.block_2 = ResnetBlock(in_channels=block_in, out_channels=block_in, dropout=dropout)
+        self.mid.block_2 = ResnetBlock(in_channels=block_in, out_channels=block_in)
 
         # end
         self.norm_out = Normalize(block_in)
@@ -271,7 +270,6 @@ class Decoder(nn.Module):
         out_ch=3,
         ch_mult=(1, 2, 4, 4),
         num_res_blocks=2,
-        dropout=0.0,
         in_channels=3,
         resolution=256,
         z_channels=4,
@@ -291,9 +289,9 @@ class Decoder(nn.Module):
 
         # middle
         self.mid = nn.Module()
-        self.mid.block_1 = ResnetBlock(in_channels=block_in, out_channels=block_in, dropout=dropout)
+        self.mid.block_1 = ResnetBlock(in_channels=block_in, out_channels=block_in)
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.block_2 = ResnetBlock(in_channels=block_in, out_channels=block_in, dropout=dropout)
+        self.mid.block_2 = ResnetBlock(in_channels=block_in, out_channels=block_in)
 
         # upsampling
         self.up = nn.ModuleList()
@@ -301,7 +299,7 @@ class Decoder(nn.Module):
             block = nn.ModuleList()
             block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks + 1):
-                block.append(ResnetBlock(in_channels=block_in, out_channels=block_out, dropout=dropout))
+                block.append(ResnetBlock(in_channels=block_in, out_channels=block_out))
                 block_in = block_out
             up = nn.Module()
             up.block = block

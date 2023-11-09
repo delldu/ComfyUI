@@ -72,7 +72,6 @@ class SDXLBase(KSampler):
 
         return adm_out
 
-
     def encode_adm(self, cond, H, W, positive=True):
         if positive and 'clip_embeds' in cond: # clip_vision
             pooled = self.unclip_adm(cond['clip_embeds'])[:,:1280]

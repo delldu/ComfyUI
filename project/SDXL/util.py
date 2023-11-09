@@ -185,41 +185,6 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
     model.load_state_dict(target_state_dict)
 
 
-class Linear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 device=None, dtype=torch.float16) -> None:
-        factory_kwargs = {'device': device, 'dtype': dtype}
-        super(Linear, self).__init__()
-        self.biasx = bias
-        self.dtype = dtype
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
-        if bias:
-            self.bias = nn.Parameter(torch.empty(out_features, **factory_kwargs))
-        else:
-            self.register_parameter('bias', None)
-
-    def forward(self, input):
-        input = input.to(self.dtype)
-        return F.linear(input, self.weight, self.bias)
-
-    def __repr__(self):
-        S = f"Linear(in_features={self.in_features}, out_features={self.out_features}, bias={self.biasx}"
-        if self.weight is not None:
-            s += f", weight=Parameter({list(self.weight.size())})"
-        if self.bias is not None:
-            s += f", bias=Parameter({list(self.bias.size())})"
-        s += ")"
-
-# class Conv2d(torch.nn.Conv2d):
-#     def reset_parameters(self):
-#         return None
-
-Conv2d=nn.Conv2d
-def conv_nd(*args, **kwargs):
-    return Conv2d(*args, **kwargs)
-
 # -------------------------
 
 def count_params(model, verbose=False):
@@ -243,9 +208,9 @@ def timestep_embedding(timesteps, dim: int, max_period: int=10000):
     """
     half = dim // 2
     freqs = torch.exp(
-        -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+        -math.log(max_period) * torch.arange(start=0, end=half) / half
     ).to(device=timesteps.device)
-    args = timesteps[:, None].float() * freqs[None]
+    args = timesteps[:, None] * freqs[None]
     embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
     if dim % 2:
         embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
@@ -259,14 +224,6 @@ def zero_module(module):
     for p in module.parameters():
         p.detach().zero_()
     return module
-
-def avg_pool_nd(*args, **kwargs):
-    """
-    Create a 1D, 2D, or 3D average pooling module.
-    """
-    pdb.set_trace()
-    
-    return nn.AvgPool2d(*args, **kwargs)
 
 def image_crop_32x32(image):
     B, C, H, W = image.size()

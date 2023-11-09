@@ -100,10 +100,10 @@ class KSampler(nn.Module):
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         log_sigmas = np.log(sigmas)
 
-        self.register_buffer('betas', torch.tensor(betas, dtype=torch.float32))
-        self.register_buffer('alphas_cumprod', torch.tensor(alphas_cumprod, dtype=torch.float32))
-        self.register_buffer('sigmas', torch.tensor(sigmas, dtype=torch.float32))
-        self.register_buffer('log_sigmas', torch.tensor(log_sigmas, dtype=torch.float32))
+        self.register_buffer('betas', torch.tensor(betas))
+        self.register_buffer('alphas_cumprod', torch.tensor(alphas_cumprod))
+        self.register_buffer('sigmas', torch.tensor(sigmas))
+        self.register_buffer('log_sigmas', torch.tensor(log_sigmas))
 
     def sigma_to_t(self, sigma):
         log_sigma = sigma.log()
@@ -111,14 +111,14 @@ class KSampler(nn.Module):
 
         return dists.abs().argmin(dim=0).view(sigma.shape)
 
-    def t_to_sigma(self, t):
-        t = t.float()
-        low_idx = t.floor().long()
-        high_idx = t.ceil().long()
-        w = t.frac()
-        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
+    # def t_to_sigma(self, t):
+    #     t = t.float()
+    #     low_idx = t.floor().long()
+    #     high_idx = t.ceil().long()
+    #     w = t.frac()
+    #     log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
 
-        return log_sigma.exp()
+    #     return log_sigma.exp()
 
     def get_scalings(self, sigma):
         # c_out = -sigma
@@ -132,17 +132,17 @@ class KSampler(nn.Module):
 
         t = self.sigma_to_t(sigma)
 
-        x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0)
-        t2 = torch.cat((t, t), dim=0)
-        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0)
-        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0)
+        x2 = torch.cat((latent_noise * c_in, latent_noise * c_in), dim=0).half()
+        t2 = torch.cat((t, t), dim=0).half()
+        c2 = torch.cat((positive_tensor['text_encoded'], negative_tensor['text_encoded']), dim=0).half()
+        y2 = torch.cat((positive_tensor['adm_encoded'], negative_tensor['adm_encoded']), dim=0).half()
         ctrl2 = {'input':[], 'middle':[], 'output': []} # control output list
 
         if 'lora_guide' in positive_tensor:
             if os.environ.get("SDXL_DEBUG") is not None:
                 todos.debug.output_var("lora_guide", positive_tensor['lora_guide'])
 
-            h2 = positive_tensor['lora_guide']
+            h2 = positive_tensor['lora_guide'].half()
             with torch.no_grad():
                 control_output = self.lora_model(x=x2, hint=h2, timesteps=t2, context=c2, y=y2)
 
@@ -165,7 +165,7 @@ class KSampler(nn.Module):
 
         eps = eps2 + (eps1 - eps2) * cond_scale # uncond + (cond - uncond) * cond_scale, get_eps
 
-        return latent_noise + eps * c_out
+        return (latent_noise + eps * c_out).to(torch.float32)
 
     def set_steps(self, steps, denoise=1.0):
         if denoise > 0.9999:
@@ -249,7 +249,7 @@ class KSampler(nn.Module):
             if sigmas[i + 1] > 0:
                 latent_noise = latent_noise + torch.randn_like(latent_noise) * sigma_up
 
-        return latent_noise.to(torch.float32)
+        return latent_noise
 
     def sample_euler(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
         """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
@@ -268,7 +268,7 @@ class KSampler(nn.Module):
             # Euler method
             latent_noise = latent_noise + d * dt
 
-        return latent_noise.to(torch.float32)
+        return latent_noise
 
 
     def sample_dpm_2(self, sigmas, latent_noise, positive_tensor, negative_tensor, cond_scale):
