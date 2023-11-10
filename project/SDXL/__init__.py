@@ -10,8 +10,6 @@
 #
 __version__ = "1.0.0"
 
-# import os
-
 import torch
 import torch.nn as nn
 
@@ -20,7 +18,6 @@ from SDXL.util import (
     state_dict_load,
     state_dict_filter,
 )
-
 
 from SDXL.model import (
     SDXLBase,

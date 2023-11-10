@@ -213,6 +213,17 @@ def make_beta_schedule(n_timestep: int, linear_start: float = 1e-4, linear_end: 
     return betas.numpy()
 
 
+class Timestep(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, t):
+        return timestep_embedding(t, self.dim)
+
+    def __repr__(self):
+        return f"Timestep({self.dim})"
+
 def timestep_embedding(timesteps, dim: int, max_period: int = 10000):
     """
     Create sinusoidal timestep embeddings.

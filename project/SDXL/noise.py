@@ -14,8 +14,8 @@ import numpy as np
 from functools import partial
 
 from SDXL.util import (
+    Timestep,
     make_beta_schedule,
-    timestep_embedding,
 )
 
 from typing import Optional, Tuple
@@ -31,18 +31,6 @@ def extract_into_tensor(a, t):
     b = t.shape[0]
     out = a.gather(-1, t)
     return out.reshape(b, 1)
-
-
-class Timestep(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, t):
-        return timestep_embedding(t, self.dim)
-
-    def __repr__(self):
-        return f"Timestep({self.dim})"
 
 
 class CLIPEmbedNoiseAugmentation(nn.Module):

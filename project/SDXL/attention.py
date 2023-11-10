@@ -43,7 +43,6 @@ class FeedForward(nn.Module):
         inner_dim = int(dim * mult)
         dim_out = default(dim_out, dim)
         project_in = GEGLU(dim, inner_dim, operations=operations)
-
         self.net = nn.Sequential(
             project_in, nn.Dropout(0.0), operations.Linear(inner_dim, dim_out)  # do not delete it !!!
         )

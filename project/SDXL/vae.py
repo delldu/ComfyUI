@@ -8,6 +8,7 @@
 # ***
 # ************************************************************************************/
 #
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -55,16 +56,17 @@ class AutoencoderKL(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-        # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
-        load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        if os.environ.get("SDXL_UNLOAD") is None:
+            # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
+            load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
     def forward(self, x):
-        x = self.encoder(x)
-        return self.decode(x)
+        z = self.encode(x)
+        return self.decode(z)
 
     def encode(self, x):
-        x = 2.0 * x - 1.0  # convert x from [0.0, 1.0] to [-1.0, 1.0]
-        h = self.encoder(x)
+        z = 2.0 * x - 1.0  # convert x from [0.0, 1.0] to [-1.0, 1.0]
+        h = self.encoder(z)
         moments = self.quant_conv(h)
 
         # Create DiagonalGaussianDistribution
@@ -76,8 +78,8 @@ class AutoencoderKL(nn.Module):
         return output
 
     def decode(self, z):
-        z = self.post_quant_conv(z)
-        dec = self.decoder(z)
+        x = self.post_quant_conv(z)
+        dec = self.decoder(x)
         # tensor [dec] size: [1, 3, 600, 456], min: -1.524532, max: 1.899036, mean: 0.059854
         out = ((dec + 1.0) / 2.0).clamp(0.0, 1.0)
 
@@ -350,8 +352,7 @@ class Decoder(nn.Module):
 
 def create_vae_model():
     model = AutoencoderKL()
-    # model = model.half()
-    model = model.eval()
+    model.half().eval()
 
     return model
 
@@ -360,3 +361,6 @@ if __name__ == "__main__":
     model = create_vae_model()
     model = torch.jit.script(model)
     print(model)
+
+    pdb.set_trace()
+

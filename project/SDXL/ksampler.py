@@ -18,9 +18,6 @@ from tqdm import trange
 from SDXL.util import (
     make_beta_schedule,
 )
-from SDXL.noise import (
-    CLIPEmbedNoiseAugmentation,
-)
 
 from SDXL.unet import (
     UNetModel,

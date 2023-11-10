@@ -107,8 +107,7 @@ class ControlLoraOps:
 
 
 class TimestepEmbedConv2d(nn.Module):
-    def __init__(
-        self,
+    def __init__(self,
         in_channels,
         out_channels,
         kernel_size,
@@ -176,8 +175,7 @@ class TimestepEmbedSiLU(nn.SiLU):
 
 # control_model
 class ControlNet(nn.Module):
-    def __init__(
-        self,
+    def __init__(self,
         in_channels=4,
         model_channels=320,
         hint_channels=3,

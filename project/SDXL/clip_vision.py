@@ -8,6 +8,7 @@
 # ***
 # ************************************************************************************/
 #
+import os
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -22,6 +23,11 @@ from SDXL.util import (
 from SDXL.clip_text import (
     CLIPEncoder,
 )
+
+from SDXL.noise import (
+    CLIPEmbedNoiseAugmentation,
+)
+
 
 from typing import Dict
 
@@ -52,10 +58,10 @@ class CLIPVisionEmbeddings(nn.Module):
         self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
         self.register_buffer("position_ids", torch.arange(self.num_positions).expand((1, -1)))
 
-    def forward(self, pixel_values):
-        batch_size = pixel_values.shape[0]
+    def forward(self, image):
+        batch_size = image.shape[0]
 
-        patch_embeds = self.patch_embedding(pixel_values)  # shape = [*, width, grid, grid]
+        patch_embeds = self.patch_embedding(image)  # shape = [*, width, grid, grid]
         patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
 
         class_embeds = self.class_embedding.expand(batch_size, 1, -1)
@@ -75,8 +81,8 @@ class CLIPVisionTransformer(nn.Module):
         self.encoder = CLIPEncoder(config)
         self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
 
-    def forward(self, pixel_values):
-        hidden_states = self.embeddings(pixel_values)
+    def forward(self, image):
+        hidden_states = self.embeddings(image)
         hidden_states = self.pre_layrnorm(hidden_states)
 
         encoder_outputs: Dict[str, torch.Tensor] = self.encoder(inputs_embeds=hidden_states, causal_attention_mask=None)
@@ -119,25 +125,44 @@ class CLIPVisionEncode(nn.Module):
         )
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
+        self.noise_augmentor = CLIPEmbedNoiseAugmentation()
         self.normal = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
         for param in self.parameters():
             param.requires_grad = False
 
-        load_model_weight(self, model_path="models/clip_vision_g.safetensors")
+        if os.environ.get("SDXL_UNLOAD") is None:
+            load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
-
-    def forward(self, pixel_values, normal_input: bool = True):
+    def get_embeds(self, image, normal_input: bool = True):
         if normal_input:
-            pixel_values = F.interpolate(pixel_values, size=(224, 224), mode="bilinear", align_corners=False)
+            image = F.interpolate(image, size=(224, 224), mode="bilinear", align_corners=False)
             # image normal
-            pixel_values = self.normal(pixel_values)
-            # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
+            image = self.normal(image)
+            # tensor [image] size: [1, 3, 224, 224], min: -1.792263, max: 2.145897, mean: -0.467128
 
-        pool_encoded = self.vision_model(pixel_values=pixel_values)
+        pool_encoded = self.vision_model(image)
         image_embeds = self.visual_projection(pool_encoded)
 
-        return image_embeds.to(torch.float32)
+        return image_embeds
+
+    def forward(self, image, weight: float=1.0, noise_augment: float=0.01):
+        image_embeds = self.get_embeds(image)
+
+        # image_embeds.size() -- [1, 1280]
+        # tensor [image_embeds] size: [1, 1280], min: -5.467596, max: 5.339845, mean: -0.032329
+
+        # self.noise_augmentor.max_noise_level -- 1000
+        noise_level = round((self.noise_augmentor.max_noise_level - 1) * noise_augment)  # ==> 0
+
+        c_adm, noise_level_emb = self.noise_augmentor(
+            image_embeds, noise_level=torch.tensor([noise_level]).to(image_embeds.device)
+        )
+
+        pool_encoded = torch.cat((c_adm, noise_level_emb), 1) * weight
+
+        return pool_encoded[:, 0:1280]
+
 
 
 def create_old_clip_vision():
@@ -152,12 +177,10 @@ def create_old_clip_vision():
 
 
 def create_clip_vision_model():
-    # output: SdxlClipVision
-
-    """This model is been used by sdxl 1.0 base model"""
+    """This model is been used by sdxl base model"""
 
     model = CLIPVisionEncode()
-    model.eval()  # half().eval().cuda()
+    model.half().eval()
 
     return model
 
@@ -176,7 +199,7 @@ if __name__ == "__main__":
         output = model(image.half().cuda(), output_hidden_states=True)
     todos.debug.output_var("output", output)
 
-    # tensor [pixel_values] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
+    # tensor [image] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
     # tensor [pool_encoded] size: [1, 1664], min: -8.867188, max: 7.449219, mean: 0.144165
     # tensor [image_embeds] size: [1, 1280], min: -6.214844, max: 4.339844, mean: -0.038574
 
@@ -184,8 +207,9 @@ if __name__ == "__main__":
 
     print("New implement ...")
     model = create_clip_vision_model()
+    model.cuda()
     with torch.no_grad():
-        output = model(image, normal_input=False)
+        output = model.get_embeds(image.half().cuda(), normal_input=False)
     todos.debug.output_var("output/image_embeds", output)
 
     model = torch.jit.script(model)
