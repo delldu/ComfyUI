@@ -16,6 +16,7 @@ from SDXL.util import (
     DictToClass,
     load_base_clip_text_model_weight,
     load_refiner_clip_text_model_weight,
+    count_model_params,
 )
 from typing import Dict, List, Optional
 
@@ -335,7 +336,7 @@ class SDXLClipG(nn.Module):
         return z.float(), pooled.float()
 
 
-class CLIPTextEncode(nn.Module):
+class CLIPTextEncoder(nn.Module):
     def __init__(self, version):
         super().__init__()
         self.version = version
@@ -347,13 +348,13 @@ class CLIPTextEncode(nn.Module):
         else:  # refiner_1.0
             self.clip_g = SDXLClipG()
 
-        for param in self.parameters():
-            param.requires_grad = False
-
         if version == "base_1.0":
             load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
         else:
             load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+
 
     def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         if self.version == "base_1.0":
@@ -373,15 +374,15 @@ class CLIPTextEncode(nn.Module):
 
 
 def create_clip_text_model(version):
-    model = CLIPTextEncode(version=version)
-    model = model.eval()
+    model = CLIPTextEncoder(version=version)
+    model.eval()
+    count_model_params(model)
+
     # model = model.cuda()
     return model
 
 
 if __name__ == "__main__":
-    import todos
-
     model = create_clip_text_model(version="base_1.0")
     model = torch.jit.script(model)
     print(model)

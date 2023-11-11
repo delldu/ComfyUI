@@ -20,7 +20,7 @@ from SDXL.util import (
 )
 
 from SDXL.model import (
-    SDXLBase,
+    SDXLCreator,
     SDXLRefiner,
 )
 
@@ -38,9 +38,6 @@ from SDXL.tokenizer import (
     create_clip_token_model,
 )
 
-from SDXL.controlnet import (
-    load_ctrl_lora_weights,
-)
 
 import todos
 import pdb
@@ -96,41 +93,20 @@ def get_model(version):
 
 def create_sdxl_base_model(skip_lora=True, skip_vision=True):
     model_version = "base_1.0"
-    model_path = "models/sd_xl_base_1.0.safetensors"
     model = DictToClass(
         {
-            "sample_model": SDXLBase(),
+            "sample_model": SDXLCreator(),
             "vae_model": create_vae_model(),  # AutoencoderKL(),
             "clip_token": create_clip_token_model(version=model_version),
             "clip_text": create_clip_text_model(version=model_version),
             "clip_vision": nn.Identity() if skip_vision else create_clip_vision_model(),
         }
     )
-    whole_sd = state_dict_load(model_path)
-
-    model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
-    model.sample_model.diffusion_model.load_state_dict(model_sd)
-    # load_diffusion_model_weight(model.sample_model.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")
-    if skip_lora:
-        pass
-    else:
-        load_ctrl_lora_weights(
-            model.sample_model.lora_model,
-            model_path="models/control-lora-canny-rank128.safetensors",
-            unet_weight=model_sd,
-        )
-        model.sample_model.lora_model.half().eval()
-
-    model.sample_model.half().eval().cuda()
-
-    # model.clip_token, model.clip_text, model.clip_vision load weight by self
-
     return model
 
 
 def create_sdxl_refiner_model():
     model_version = "refiner_1.0"
-    model_path = "models/sd_xl_refiner_1.0.safetensors"
     model = DictToClass(
         {
             "sample_model": SDXLRefiner(),
@@ -140,13 +116,4 @@ def create_sdxl_refiner_model():
             "clip_vision": None,
         }
     )
-    whole_sd = state_dict_load(model_path)
-
-    model_sd = state_dict_filter(whole_sd, ["model.diffusion_model."], remove_prefix=True)
-    model.sample_model.diffusion_model.load_state_dict(model_sd)
-    # load_diffusion_model_weight(model.sample_model.diffusion_model, model_path="models/sd_xl_refiner_1.0.safetensors")
-    model.sample_model = model.sample_model.eval().half().cuda()
-
-    # model.clip_token, model.clip_text load weight by self
-
     return model

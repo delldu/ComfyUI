@@ -26,7 +26,6 @@ class DictToClass(object):
         if _obj:
             self.__dict__.update(_obj)
 
-
 def state_dict_load(model_path):
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
@@ -42,7 +41,6 @@ def state_dict_load(model_path):
     _, extension = os.path.splitext(checkpoint)
     if extension.lower() == ".safetensors":
         import safetensors.torch
-
         state_dict = safetensors.torch.load_file(checkpoint, device="cpu")
     else:
         state_dict = torch.load(checkpoint, map_location=torch.device("cpu"))
@@ -160,6 +158,8 @@ def refiner_clip_text_state_dict(state_dict):
 
 
 def load_base_clip_text_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
+    if os.environ.get("SDXL_LOAD") == "NO":
+        return
     state_dict = state_dict_load(model_path)
     target_state_dict = base_clip_text_state_dict(state_dict)
     m, u = model.load_state_dict(target_state_dict, strict=False)
@@ -192,7 +192,7 @@ def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
     model.load_state_dict(state_dict)
 
 
-def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
+def load_unet_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
     state_dict = state_dict_load(model_path)
     target_state_dict = state_dict_filter(state_dict, ["model.diffusion_model."], remove_prefix=True)
     model.load_state_dict(target_state_dict)
@@ -201,10 +201,13 @@ def load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safeten
 # -------------------------
 
 
-def count_params(model, verbose=False):
+def count_model_params(model, verbose=True):
     total_params = sum(p.numel() for p in model.parameters())
     if verbose:
-        print(f"{model.__class__.__name__} has {total_params*1.e-6:.2f} M params.")
+        print("-" * 120)
+        print(f"{model.__class__.__name__} has {total_params*1.e-6:.2f}M params.")
+        print("-" * 120)
+
     return total_params
 
 

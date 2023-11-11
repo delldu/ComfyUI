@@ -20,6 +20,7 @@ from SDXL.util import (
     state_dict_load,
     state_dict_filter,
     load_model_weight,
+    count_model_params,
 )
 
 from SDXL.attention import (
@@ -38,7 +39,7 @@ import todos
 import pdb
 
 
-def update_model_weight(obj, key, value):
+def update_lora_weight(obj, key, value):
     try:
         # obj -- ControlNet(...)
         # key -- 'time_embed.0.weight'
@@ -53,7 +54,10 @@ def update_model_weight(obj, key, value):
         pass
 
 
-def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors", unet_weight=None):
+def load_ctrl_lora_weight(model, model_path="models/control-lora-canny-rank128.safetensors", unet_weight=None):
+    if os.environ.get("SDXL_LOAD") == "NO":
+        return
+
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
@@ -70,11 +74,11 @@ def load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.
         lora_weight = state_dict_load(model_path)
 
         for k in unet_weight:
-            update_model_weight(model, k, unet_weight[k])
+            update_lora_weight(model, k, unet_weight[k])
 
         for k in lora_weight:
             if k not in {"lora_controlnet"}:
-                update_model_weight(model, k, lora_weight[k])
+                update_lora_weight(model, k, lora_weight[k])
             else:
                 pass  # skip "lora_controlnet"
     else:
@@ -115,7 +119,6 @@ class TimestepEmbedConv2d(nn.Module):
         padding=0,
         dilation=1,
         groups=1,
-        bias=True,
         up_down=True,
     ):
         super().__init__()
@@ -126,22 +129,26 @@ class TimestepEmbedConv2d(nn.Module):
         self.padding = padding
         self.dilation = dilation
         self.groups = groups
-
+        self.up_down = up_down
         self.weight = nn.Parameter(
             torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
         )
         self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
-        if up_down:
-            self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
-            self.down = nn.Parameter(
-                torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
-            )
-        else:
-            self.up = None
-            self.down = None
+        # if up_down:
+        #     self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
+        #     self.down = nn.Parameter(
+        #         torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
+        #     )
+        # else:
+        #     self.up = None
+        #     self.down = None
+        self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
+        self.down = nn.Parameter(
+            torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
+        )
 
     def forward(self, input, emb=None, context=None):  # x, [emb, context]
-        if self.up is not None:
+        if self.up_down:
             return F.conv2d(
                 input,
                 self.weight
@@ -173,6 +180,13 @@ class TimestepEmbedSiLU(nn.SiLU):
         return F.silu(x, inplace=self.inplace)
 
 
+class ControlNot(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
+        return []
+
 # control_model
 class ControlNet(nn.Module):
     def __init__(self,
@@ -183,8 +197,8 @@ class ControlNet(nn.Module):
         attention_resolutions=[2, 4],
         channel_mult=(1, 2, 4),
         num_head_channels=64,
-        transformer_depth=[0, 2, 10],  # custom transformer support
-        context_dim=2048,  # custom transformer support
+        transformer_depth=[0, 2, 10],
+        context_dim=2048,
         adm_in_channels=2816,
         transformer_depth_middle=10,
         operations=ControlLoraOps(),
@@ -283,11 +297,12 @@ class ControlNet(nn.Module):
         )
         self.middle_block_out = self.make_zero_conv(ch)
 
+        load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
+
         for param in self.parameters():
             param.requires_grad = False
 
     def make_zero_conv(self, channels):
-        # no up/down
         return TimestepEmbedSequential(
             zero_module(TimestepEmbedConv2d(channels, channels, 1, padding=0, up_down=False))
         )
@@ -333,75 +348,38 @@ class ControlNet(nn.Module):
 
 def create_canny_control_lora():
     model = ControlNet()
+    model.half().eval()
 
-    # checkpoint = "models/canny_lora.pth"
-    # if not os.path.exists(checkpoint):
-    #     load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
-    #     model = model.half()
-    #     torch.save(model.state_dict(), checkpoint)
-    # else:
-    #     load_model_weight(model, checkpoint)
-
-    load_ctrl_lora_weights(model, model_path="models/control-lora-canny-rank128.safetensors")
-    model = model.half()
-    model = model.eval()
     return model
 
 
 def create_depth_control_lora():
     model = ControlNet()
-
-    # checkpoint = "models/depth_lora.pth"
-    # if not os.path.exists(checkpoint):
-    #     load_ctrl_lora_weights(model, model_path="models/control-lora-depth-rank128.safetensors")
-    #     model = model.half()
-    #     torch.save(model.state_dict(), checkpoint)
-    # else:
-    #     load_model_weight(model, checkpoint)
-
-    model = model.half()
-    model = model.eval()
+    load_ctrl_lora_weight(model, model_path="models/control-lora-depth-rank128.safetensors")
+    model.half().eval()
     return model
 
 
 def create_color_control_lora():
     model = ControlNet()
-
-    # checkpoint = "models/color_lora.pth"
-    # if not os.path.exists(checkpoint):
-    #     load_ctrl_lora_weights(model, model_path="models/control-lora-recolor-rank128.safetensors")
-
-    #     model = model.half()
-    #     torch.save(model.state_dict(), checkpoint)
-    # else:
-    #     load_model_weight(model, checkpoint)
-
-    model = model.half()
-    model = model.eval()
+    load_ctrl_lora_weight(model, model_path="models/control-lora-recolor-rank128.safetensors")
+    model.half().eval()
+    count_model_params(model)
     return model
 
 
 def create_sketch_control_lora():
     model = ControlNet()
+    #     load_ctrl_lora_weight(model, model_path="models/control-lora-sketch-rank128-metadata.safetensors")
+    model.half().eval()
 
-    # checkpoint = "models/sketch_lora.pth"
-    # if not os.path.exists(checkpoint):
-    #     load_ctrl_lora_weights(model, model_path="models/control-lora-sketch-rank128-metadata.safetensors")
-
-    #     model = model.half()
-    #     torch.save(model.state_dict(), checkpoint)
-    # else:
-    #     load_model_weight(model, checkpoint)
-
-    model = model.half()
-    model = model.eval()
     return model
 
 
 if __name__ == "__main__":
-    import todos
-
     model = create_canny_control_lora()
+    count_model_params(model)
+
     model = torch.jit.script(model)
     print(model)
     # todos.debug.output_weight(model.state_dict())

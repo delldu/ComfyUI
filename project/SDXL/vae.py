@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SDXL.util import (
+    count_model_params,
     load_vae_model_weight,
 )
 
@@ -20,7 +21,7 @@ import todos
 import pdb
 
 
-# first_stage_model, only for test network struct !!!
+# first_stage_model
 class AutoencoderKL(nn.Module):
     """
     sdxl_base.yaml/sdxl_refine.yaml
@@ -56,7 +57,7 @@ class AutoencoderKL(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
 
-        if os.environ.get("SDXL_UNLOAD") is None:
+        if os.environ.get("SDXL_LOAD") != "NO":
             # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
             load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
 
@@ -96,7 +97,7 @@ def Normalize(in_channels, num_groups=32):
 
 class Downsample(nn.Module):
     def __init__(self, in_channels):
-        super(Downsample, self).__init__()
+        super().__init__()
         self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=0)
 
     def forward(self, x):
@@ -108,7 +109,7 @@ class Downsample(nn.Module):
 
 class Upsample(nn.Module):
     def __init__(self, in_channels):
-        super(Upsample, self).__init__()
+        super().__init__()
         self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
@@ -353,6 +354,7 @@ class Decoder(nn.Module):
 def create_vae_model():
     model = AutoencoderKL()
     model.half().eval()
+    count_model_params(model)
 
     return model
 
@@ -361,6 +363,4 @@ if __name__ == "__main__":
     model = create_vae_model()
     model = torch.jit.script(model)
     print(model)
-
-    pdb.set_trace()
 

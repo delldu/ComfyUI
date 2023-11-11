@@ -12,7 +12,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-
 from SDXL.ksampler import (
     KSampler,
 )
@@ -20,40 +19,18 @@ from SDXL.ksampler import (
 from SDXL.util import (
     Timestep,
 )
+from typing import Dict
 
 import todos
 import pdb
 
 
-class SDXLRefiner(KSampler):
-    def __init__(self):
-        super().__init__(version="refiner_1.0")
-        self.embedder = Timestep(256)
-
-    def encode_adm(self, cond, H, W, positive=True):
-        pooled = cond["pool_encoded"]
-
-        crop_h = 0
-        crop_w = 0
-        aesthetic_score = 6.0 if positive else 2.5
-
-        out = []
-        out.append(self.embedder(torch.Tensor([H * 8])))  # H * 8 -- 600
-        out.append(self.embedder(torch.Tensor([W * 8])))  # W * 8 -- 456
-        out.append(self.embedder(torch.Tensor([crop_h])))
-        out.append(self.embedder(torch.Tensor([crop_w])))
-        out.append(self.embedder(torch.Tensor([aesthetic_score])))
-        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
-
-        return torch.cat((pooled, flat.to(pooled.device)), dim=1)
-
-
-class SDXLBase(KSampler):
+class SDXLCreator(KSampler):
     def __init__(self):
         super().__init__(version="base_1.0")
         self.embedder = Timestep(256)
 
-    def encode_adm(self, cond, H, W, positive=True):
+    def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
 
         crop_w = 0
@@ -62,11 +39,48 @@ class SDXLBase(KSampler):
         target_height = H * 8
 
         out = []
-        out.append(self.embedder(torch.Tensor([H * 8])))
-        out.append(self.embedder(torch.Tensor([W * 8])))
-        out.append(self.embedder(torch.Tensor([crop_h])))
-        out.append(self.embedder(torch.Tensor([crop_w])))
-        out.append(self.embedder(torch.Tensor([target_height])))
-        out.append(self.embedder(torch.Tensor([target_width])))
+        out.append(self.embedder(torch.tensor([H * 8])))
+        out.append(self.embedder(torch.tensor([W * 8])))
+        out.append(self.embedder(torch.tensor([crop_h])))
+        out.append(self.embedder(torch.tensor([crop_w])))
+        out.append(self.embedder(torch.tensor([target_height])))
+        out.append(self.embedder(torch.tensor([target_width])))
         flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
         return torch.cat((pooled.to(flat.device), flat), dim=1).to(pooled.device)
+
+
+class SDXLRefiner(KSampler):
+    def __init__(self):
+        super().__init__(version="refiner_1.0")
+        self.embedder = Timestep(256)
+
+    def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
+        pooled = cond["pool_encoded"]
+
+        crop_h = 0
+        crop_w = 0
+        aesthetic_score = 6.0 if positive else 2.5
+
+        out = []
+        out.append(self.embedder(torch.tensor([H * 8])))  # H * 8 -- 600
+        out.append(self.embedder(torch.tensor([W * 8])))  # W * 8 -- 456
+        out.append(self.embedder(torch.tensor([crop_h])))
+        out.append(self.embedder(torch.tensor([crop_w])))
+        out.append(self.embedder(torch.tensor([aesthetic_score])))
+        flat = torch.flatten(torch.cat(out)).unsqueeze(dim=0).repeat(pooled.shape[0], 1)
+
+        return torch.cat((pooled, flat.to(pooled.device)), dim=1)
+
+
+if __name__ == "__main__":
+    model = SDXLCreator()
+    model = torch.jit.script(model)
+    print(model)
+
+
+    model = SDXLRefiner()
+    model = torch.jit.script(model)
+    print(model)
+
+
+    pdb.set_trace()

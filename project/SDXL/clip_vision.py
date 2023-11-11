@@ -18,6 +18,7 @@ from SDXL.util import (
     DictToClass,
     load_model_weight,
     load_clip_vision_image,
+    count_model_params,
 )
 
 from SDXL.clip_text import (
@@ -94,11 +95,10 @@ class CLIPVisionTransformer(nn.Module):
         return pool_encoded
 
 
-class CLIPVisionEncode(nn.Module):
+class CLIPVisionEncoder(nn.Module):
     """
     CLIPVisionModelWithProjection
     """
-
     def __init__(self):
         super().__init__()
         # come from comfy/clip_vision_config_g.json
@@ -125,14 +125,14 @@ class CLIPVisionEncode(nn.Module):
         )
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
+
+        load_model_weight(self, model_path="models/clip_vision_g.safetensors")
+
         self.noise_augmentor = CLIPEmbedNoiseAugmentation()
         self.normal = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
 
         for param in self.parameters():
             param.requires_grad = False
-
-        if os.environ.get("SDXL_UNLOAD") is None:
-            load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
     def get_embeds(self, image, normal_input: bool = True):
         if normal_input:
@@ -164,22 +164,20 @@ class CLIPVisionEncode(nn.Module):
         return pool_encoded[:, 0:1280]
 
 
-
 def create_old_clip_vision():
     from transformers import CLIPVisionModelWithProjection, CLIPVisionConfig
 
     config = CLIPVisionConfig.from_json_file("../../comfy/clip_vision_config_g.json")
     model = CLIPVisionModelWithProjection(config)
     load_model_weight(model, model_path="models/clip_vision_g.safetensors")
-    model.half().eval().cuda()
-
+    model.half().eval()
     return model
 
 
 def create_clip_vision_model():
     """This model is been used by sdxl base model"""
 
-    model = CLIPVisionEncode()
+    model = CLIPVisionEncoder()
     model.half().eval()
 
     return model
@@ -189,17 +187,18 @@ if __name__ == "__main__":
     import todos
 
     model = create_old_clip_vision()
+    model.cuda()
 
     # todos.debug.output_weight(model.state_dict())
     image = load_clip_vision_image("../workflow/image.png")
     # todos.debug.output_var("image", image)
+    # tensor [image] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
 
     print("Old implement ...")
     with torch.no_grad():
         output = model(image.half().cuda(), output_hidden_states=True)
     todos.debug.output_var("output", output)
 
-    # tensor [image] size: [1, 3, 224, 224], min: -1.791992, max: 2.146484, mean: -0.467529
     # tensor [pool_encoded] size: [1, 1664], min: -8.867188, max: 7.449219, mean: 0.144165
     # tensor [image_embeds] size: [1, 1280], min: -6.214844, max: 4.339844, mean: -0.038574
 
@@ -207,10 +206,12 @@ if __name__ == "__main__":
 
     print("New implement ...")
     model = create_clip_vision_model()
+    count_model_params(model)
     model.cuda()
     with torch.no_grad():
         output = model.get_embeds(image.half().cuda(), normal_input=False)
     todos.debug.output_var("output/image_embeds", output)
 
+    pdb.set_trace()
     model = torch.jit.script(model)
     print(model)

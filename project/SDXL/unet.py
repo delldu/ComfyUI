@@ -19,9 +19,10 @@ from SDXL.attention import (
 )
 
 from SDXL.util import (
-    load_diffusion_model_weight,
-    timestep_embedding,
     zero_module,
+    timestep_embedding,
+    count_model_params,
+    load_unet_model_weight,
 )
 
 from typing import Dict, List
@@ -190,16 +191,16 @@ class UNetModel(nn.Module):
 
     def __init__(self, version,
         in_channels=4,
-        model_channels=320,
+        model_channels=320, # 384
         out_channels=4,
         num_res_blocks=2,
         attention_resolutions=[2, 4],
-        channel_mult=(1, 2, 4),
+        channel_mult=(1, 2, 4), # [1, 2, 4, 4]
         num_head_channels=64,
-        transformer_depth=[0, 2, 10],  # custom transformer support
-        context_dim=2048,  # custom transformer support
-        adm_in_channels=2816,
-        transformer_depth_middle=10,
+        transformer_depth=[0, 2, 10],  # [0, 4, 4, 0]
+        context_dim=2048,  # 1280
+        adm_in_channels=2816, # 2560
+        transformer_depth_middle=10, # 4
         operations=UNetOps(),
     ):
         super().__init__()
@@ -208,7 +209,7 @@ class UNetModel(nn.Module):
             adm_in_channels = 2816
             model_channels = 320
             channel_mult = [1, 2, 4]
-            transformer_depth = [1, 2, 10]
+            transformer_depth = [0, 2, 10]
             context_dim = 2048
             transformer_depth_middle = 10
         else:  # refiner_1.0
@@ -328,8 +329,13 @@ class UNetModel(nn.Module):
             zero_module(nn.Conv2d(model_channels, out_channels, 3, padding=1)),
         )
 
+        if version == "base_1.0":
+            load_unet_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+        else:
+            load_unet_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
+
 
     def forward(self, x, timesteps, context, y, control: Dict[str, List[torch.Tensor]]):
         # x.shape -- [2, 4, 104, 157]
@@ -394,26 +400,25 @@ class UNetModel(nn.Module):
 
 def create_base_unet_model():
     model = UNetModel(version="base_1.0")
-    load_diffusion_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors")
-    model = model.half().eval()
+    model.half().eval()
     return model
 
 
 def create_refiner_unet_model():
     model = UNetModel(version="refiner_1.0")
-    load_diffusion_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors")
-    model = model.half().eval()
+    model.half().eval()
     return model
 
 
 if __name__ == "__main__":
-    import todos
-
     model = create_base_unet_model()
+    count_model_params(model)
     model = torch.jit.script(model)
     print(model)
 
     model = create_refiner_unet_model()
+    count_model_params(model)
     model = torch.jit.script(model)
     print(model)
+
     # # todos.debug.output_weight(model.state_dict())
