@@ -360,5 +360,7 @@ def create_vae_model():
 if __name__ == "__main__":
     model = create_vae_model()
     torch.save(model.state_dict(), "models/AutoEncoder.pth")
+
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
-    print(f"torch.jit.script({model.__class__.__name__}) OK !")
+    print(f"torch.jit.script({class_name}) OK !")

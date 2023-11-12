@@ -375,8 +375,10 @@ def create_sketch_control_lora():
 if __name__ == "__main__":
     model = create_canny_control_lora()
 
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({class_name}) OK !")
+
     # todos.debug.output_weight(model.state_dict())
 
     # model = create_depth_control_lora()

@@ -36,6 +36,7 @@ class ImageCreator(KSampler):
     def __init__(self):
         super().__init__(version="base_1.0")
         self.embedder = Timestep(256)
+        # unet_model, lora_model
         self.clip_model = CreatorCLIPTextEncoder()
         self.vae_model = AutoEncoder()
 
@@ -86,12 +87,16 @@ class ImageRefiner(KSampler):
 
 if __name__ == "__main__":
     model = ImageCreator()
-    
     torch.save(model.state_dict(), "models/ImageCreator.pth")
+
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
     print(f"torch.jit.script({model.__class__.__name__}) OK !")
 
+
     model = ImageRefiner()
     torch.save(model.state_dict(), "models/ImageRefiner.pth")
+
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
-    print(f"torch.jit.script({model.__class__.__name__}) OK !")
+    print(f"torch.jit.script({class_name}) OK !")

@@ -98,5 +98,6 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
 
 if __name__ == "__main__":
     model = CLIPEmbedNoiseAugmentation()
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({class_name}) OK !")
