@@ -16,6 +16,7 @@ from functools import partial
 from SDXL.util import (
     Timestep,
     make_beta_schedule,
+    count_model_params,
 )
 
 from typing import Optional, Tuple
@@ -46,6 +47,8 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
 
         for param in self.parameters():
             param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
 
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
         betas = make_beta_schedule(timesteps, linear_start=linear_start, linear_end=linear_end)

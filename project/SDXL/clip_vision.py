@@ -39,7 +39,6 @@ import pdb
 class CLIPVisionEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # self.config = config
         self.embed_dim = config.hidden_size
         self.image_size = config.image_size
         self.patch_size = config.patch_size
@@ -125,7 +124,6 @@ class CLIPVisionEncoder(nn.Module):
         )
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
-
         load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
         self.noise_augmentor = CLIPEmbedNoiseAugmentation()
@@ -133,6 +131,8 @@ class CLIPVisionEncoder(nn.Module):
 
         for param in self.parameters():
             param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
 
     def get_embeds(self, image, normal_input: bool = True):
         if normal_input:
@@ -175,10 +175,10 @@ def create_old_clip_vision():
 
 
 def create_clip_vision_model():
-    """This model is been used by sdxl base model"""
+    """This model only been used by sdxl base model"""
 
     model = CLIPVisionEncoder()
-    model.half().eval()
+    
 
     return model
 
@@ -206,12 +206,13 @@ if __name__ == "__main__":
 
     print("New implement ...")
     model = create_clip_vision_model()
-    count_model_params(model)
+    torch.save(model.state_dict(), "models/ClipVision.pth")
+
     model.cuda()
     with torch.no_grad():
         output = model.get_embeds(image.half().cuda(), normal_input=False)
     todos.debug.output_var("output/image_embeds", output)
 
-    pdb.set_trace()
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")
+

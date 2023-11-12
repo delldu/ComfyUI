@@ -70,8 +70,8 @@ def get_karras_sigmas(n:int, sigma_min:float=0.0291675, sigma_max:float=14.61464
 
 
 class KSampler(nn.Module):
-    def __init__(self, version="base_1.0"):
-        super(KSampler, self).__init__()
+    def __init__(self, version):
+        super().__init__()
         self.version = version
 
         self.scale_factor = 0.13025
@@ -111,7 +111,7 @@ class KSampler(nn.Module):
 
         return dists.abs().argmin(dim=0).view(sigma.shape)
 
-    def prepare_noise(self, latent_image, seed:int):
+    def prepare_noise(self, latent_image, sigmas, seed:int):
         torch.manual_seed(seed)
         # noise = torch.randn(latent_image.size(), dtype=latent_image.dtype, generator=generator).to(latent_image.device)
         noise = torch.randn(latent_image.size(), dtype=latent_image.dtype).to(latent_image.device)
@@ -180,9 +180,8 @@ class KSampler(nn.Module):
             sigmas = sigmas[-(steps + 1) :]
         return sigmas
 
-    def forward(self, positive_tensor: Dict[str, torch.Tensor], negative_tensor: Dict[str, torch.Tensor], 
-        latent_image, cond_scale:float=7.5, control_tensor: Dict[str, torch.Tensor]={}, 
-        steps:int=20, denoise:float=1.0, seed:int=-1):
+    def forward(self, positive_tensor: Dict[str, torch.Tensor], negative_tensor: Dict[str, torch.Tensor],cond_scale:float, 
+        latent_image, control_tensor: Dict[str, torch.Tensor], steps:int, denoise:float, seed:int):
 
         B, C, H, W = latent_image.size()
         positive_tensor["adm_encoded"] = self.encode_adm(positive_tensor, H, W, positive=True)
@@ -195,7 +194,7 @@ class KSampler(nn.Module):
         # print("-" * 120)
 
         sigmas = self.set_steps(steps, denoise).to(latent_image.device)  # steps, denois ==> sigmas
-        noise = self.prepare_noise(latent_image, seed)
+        noise = self.prepare_noise(latent_image, sigmas, seed)
 
         latent_image = self.process_latent_in(latent_image)
         latent_noise = latent_image + noise  # prepare_noise(latent_image, seed) * sigmas[0]

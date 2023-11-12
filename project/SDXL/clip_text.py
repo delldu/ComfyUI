@@ -155,7 +155,6 @@ class CLIPEncoderLayer(nn.Module):
 class CLIPEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.config = config
         self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.atten_layer_index = config.atten_layer_index
 
@@ -274,7 +273,7 @@ class SDXLClipL(nn.Module):
         self.text_projection = nn.Parameter(
             torch.eye(self.transformer.get_input_embeddings().weight.shape[1]), requires_grad=False
         )
-        self.logit_scale = nn.Parameter(torch.tensor(4.6055), requires_grad=False)
+        # self.logit_scale = nn.Parameter(torch.tensor(4.6055), requires_grad=False)
         self.layer_norm_hidden_state = True
 
     def forward(self, tokens) -> List[torch.Tensor]:
@@ -336,53 +335,100 @@ class SDXLClipG(nn.Module):
         return z.float(), pooled.float()
 
 
-class CLIPTextEncoder(nn.Module):
-    def __init__(self, version):
+# class CLIPTextEncoder(nn.Module):
+#     '''Verify model'''
+
+#     def __init__(self, version):
+#         super().__init__()
+#         self.version = version
+
+#         if version == "base_1.0":
+#             self.clip_l = SDXLClipL()
+#             self.clip_l.layer_norm_hidden_state = False  # Base version
+#             self.clip_g = SDXLClipG()
+#         else:  # refiner_1.0
+#             self.clip_g = SDXLClipG()
+
+#         if version == "base_1.0":
+#             load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+#         else:
+#             load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+#         for param in self.parameters():
+#             param.requires_grad = False
+#         self.half().eval()
+#         count_model_params(self)
+
+
+#     def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+#         if self.version == "base_1.0":
+#             token_l = tokens["l"]  # padding with stop_token
+#             token_g = tokens["g"]  # padding with 0
+
+#             l_out, l_pooled = self.clip_l(token_l)
+#             g_out, g_pooled = self.clip_g(token_g)
+
+#             return {"text_encoded": torch.cat([l_out, g_out], dim=-1), "pool_encoded": g_pooled}
+
+#         # refiner_1.0 version
+#         token_g = tokens["g"]
+#         g_out, g_pooled = self.clip_g(token_g)  # torch.LongTensor(token_g))
+
+#         return {"text_encoded": g_out, "pool_encoded": g_pooled}
+
+
+class CreatorCLIPTextEncoder(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.version = version
+        self.clip_l = SDXLClipL()
+        self.clip_l.layer_norm_hidden_state = False  # Base version
+        self.clip_g = SDXLClipG()
 
-        if version == "base_1.0":
-            self.clip_l = SDXLClipL()
-            self.clip_l.layer_norm_hidden_state = False  # Base version
-            self.clip_g = SDXLClipG()
-        else:  # refiner_1.0
-            self.clip_g = SDXLClipG()
-
-        if version == "base_1.0":
-            load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
-        else:
-            load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
 
 
     def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        if self.version == "base_1.0":
-            token_l = tokens["l"]  # padding with stop_token
-            token_g = tokens["g"]  # padding with 0
+        token_l = tokens["l"]  # padding with stop_token
+        token_g = tokens["g"]  # padding with 0
 
-            l_out, l_pooled = self.clip_l(token_l)
-            g_out, g_pooled = self.clip_g(token_g)
+        l_out, l_pooled = self.clip_l(token_l)
+        g_out, g_pooled = self.clip_g(token_g)
 
-            return {"text_encoded": torch.cat([l_out, g_out], dim=-1), "pool_encoded": g_pooled}
+        return {"text_encoded": torch.cat([l_out, g_out], dim=-1), "pool_encoded": g_pooled}
 
-        # refiner_1.0 version
+
+class RefinerCLIPTextEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.clip_g = SDXLClipG()
+
+        load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        for param in self.parameters():
+            param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
+
+    def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         token_g = tokens["g"]
         g_out, g_pooled = self.clip_g(token_g)  # torch.LongTensor(token_g))
 
         return {"text_encoded": g_out, "pool_encoded": g_pooled}
 
-
-def create_clip_text_model(version):
-    model = CLIPTextEncoder(version=version)
-    model.eval()
-    count_model_params(model)
-
-    # model = model.cuda()
-    return model
+# def create_clip_text_model(version):
+#     model = CLIPTextEncoder(version=version)
+#     return model
 
 
 if __name__ == "__main__":
-    model = create_clip_text_model(version="base_1.0")
+    model = CreatorCLIPTextEncoder()
+    class_name = model.__class__.__name__
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({class_name}) OK !")
+
+    model = RefinerCLIPTextEncoder()
+    class_name = model.__class__.__name__
+    model = torch.jit.script(model)
+    print(f"torch.jit.script({class_name}) OK !")

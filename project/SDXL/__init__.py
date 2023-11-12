@@ -20,17 +20,17 @@ from SDXL.util import (
 )
 
 from SDXL.model import (
-    SDXLCreator,
-    SDXLRefiner,
+    ImageCreator,
+    ImageRefiner,
 )
 
 from SDXL.vae import (
     create_vae_model,
 )
 
-from SDXL.clip_text import (
-    create_clip_text_model,
-)
+# from SDXL.clip_text import (
+#     create_clip_text_model,
+# )
 from SDXL.clip_vision import (
     create_clip_vision_model,
 )
@@ -95,8 +95,8 @@ def create_sdxl_base_model(skip_lora=True, skip_vision=True):
     model_version = "base_1.0"
     model = DictToClass(
         {
-            "sample_model": SDXLCreator(),
-            "vae_model": create_vae_model(),  # AutoencoderKL(),
+            "sample_model": ImageCreator(),
+            "vae_model": create_vae_model(),  # AutoEncoder(),
             "clip_token": create_clip_token_model(version=model_version),
             "clip_text": create_clip_text_model(version=model_version),
             "clip_vision": nn.Identity() if skip_vision else create_clip_vision_model(),
@@ -109,8 +109,8 @@ def create_sdxl_refiner_model():
     model_version = "refiner_1.0"
     model = DictToClass(
         {
-            "sample_model": SDXLRefiner(),
-            "vae_model": create_vae_model(),  # AutoencoderKL(),
+            "sample_model": ImageRefiner(),
+            "vae_model": create_vae_model(),  # AutoEncoder(),
             "clip_token": create_clip_token_model(version=model_version),
             "clip_text": create_clip_text_model(version=model_version),
             "clip_vision": None,

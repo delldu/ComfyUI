@@ -20,10 +20,10 @@ from SDXL.util import (
 import todos
 import pdb
 
-
-# first_stage_model
-class AutoencoderKL(nn.Module):
+class AutoEncoder(nn.Module):
     """
+    AutoencoderKL -- first_stage_model
+
     sdxl_base.yaml/sdxl_refine.yaml
         first_stage_config:
           target: sgm.models.autoencoder.AutoencoderKLInferenceWrapper
@@ -47,19 +47,19 @@ class AutoencoderKL(nn.Module):
     """
 
     def __init__(self, embed_dim=4, z_channels=4):
-        super(AutoencoderKL, self).__init__()
+        super().__init__()
         self.encoder = Encoder()
         self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
 
         self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
         self.decoder = Decoder()  # model size 190 M
 
+        # https://huggingface.co/stabilityai/sdxl-vae, !!! better performance !!!
+        load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
         for param in self.parameters():
             param.requires_grad = False
-
-        if os.environ.get("SDXL_LOAD") != "NO":
-            # https://huggingface.co/stabilityai/sdxl-vae, better performance !!!
-            load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        self.half().eval()
+        count_model_params(self)
 
     def forward(self, x):
         z = self.encode(x)
@@ -352,15 +352,13 @@ class Decoder(nn.Module):
 
 
 def create_vae_model():
-    model = AutoencoderKL()
-    model.half().eval()
-    count_model_params(model)
+    model = AutoEncoder()
 
     return model
 
 
 if __name__ == "__main__":
     model = create_vae_model()
+    torch.save(model.state_dict(), "models/AutoEncoder.pth")
     model = torch.jit.script(model)
-    print(model)
-
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")

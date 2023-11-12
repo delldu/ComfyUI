@@ -298,9 +298,11 @@ class ControlNet(nn.Module):
         self.middle_block_out = self.make_zero_conv(ch)
 
         load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
-
         for param in self.parameters():
             param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
+
 
     def make_zero_conv(self, channels):
         return TimestepEmbedSequential(
@@ -348,37 +350,30 @@ class ControlNet(nn.Module):
 
 def create_canny_control_lora():
     model = ControlNet()
-    model.half().eval()
-
     return model
 
 
 def create_depth_control_lora():
     model = ControlNet()
     load_ctrl_lora_weight(model, model_path="models/control-lora-depth-rank128.safetensors")
-    model.half().eval()
     return model
 
 
 def create_color_control_lora():
     model = ControlNet()
     load_ctrl_lora_weight(model, model_path="models/control-lora-recolor-rank128.safetensors")
-    model.half().eval()
-    count_model_params(model)
     return model
 
 
 def create_sketch_control_lora():
     model = ControlNet()
     #     load_ctrl_lora_weight(model, model_path="models/control-lora-sketch-rank128-metadata.safetensors")
-    model.half().eval()
 
     return model
 
 
 if __name__ == "__main__":
     model = create_canny_control_lora()
-    count_model_params(model)
 
     model = torch.jit.script(model)
     print(model)

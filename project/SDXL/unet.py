@@ -72,19 +72,24 @@ class TimestepEmbedUpsample(nn.Module):
     An upsampling layer with an optional convolution.
     :param channels: channels in the inputs and outputs.
     """
-    def __init__(self, channels, out_channels=None, padding=1):
+    def __init__(self, channels, out_channels=None, padding=1, scale2x=True):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.conv = nn.Conv2d(self.channels, self.out_channels, 3, padding=padding)
+        self.scale2x = scale2x
 
     def forward(self, x, emb, context):  # x, [emb, context]
         assert x.shape[1] == self.channels
-        shape = [x.shape[2] * 2, x.shape[3] * 2]
-
-        x = F.interpolate(x, size=shape, mode="nearest")
+        if self.scale2x:
+            shape = [x.shape[2] * 2, x.shape[3] * 2]
+            x = F.interpolate(x, size=shape, mode="nearest")
         x = self.conv(x)
         return x
+
+    def __repr__(self):
+        s = f"TimestepEmbedUpsample(in_channels={self.channels}, out_channels={self.out_channels}, scale2x={self.scale2x})"
+        return s
 
 
 class TimestepEmbedConv2d(nn.Conv2d):
@@ -108,6 +113,9 @@ class TimestepEmbedDownsample(nn.Module):
         assert x.shape[1] == self.channels
         return self.op(x)
 
+    def __repr__(self):
+        s = f"TimestepEmbedDownsample(in_channels={self.channels}, out_channels={self.out_channels})"
+        return s
 
 class TimestepEmbedResBlock(nn.Module):
     """
@@ -271,7 +279,8 @@ class UNetModel(nn.Module):
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 input_block_chans.append(ch)
 
-            if level != len(channel_mult) - 1:  # Is last channel ?
+            if level != len(channel_mult) - 1:  # Is last channel ? channel_mult -- [1, 2, 4] or [1, 2, 4, 4]
+                # self.input_blocks[3], [6] or [3, 6, 9], [0, 1, 2] ==> [3, 6, 9] == 3 * (level + 1) ?
                 self.input_blocks.append(TimestepEmbedSequential(TimestepEmbedDownsample(ch, out_channels=ch)))
                 input_block_chans.append(ch)
                 ds *= 2
@@ -297,6 +306,7 @@ class UNetModel(nn.Module):
 
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(self.num_res_blocks[level] + 1):
+                # self.num_res_blocks -- [2, 2, 2] or [2, 2, 2, 2]
                 ich = input_block_chans.pop()
                 layers = [
                     TimestepEmbedResBlock(
@@ -319,7 +329,11 @@ class UNetModel(nn.Module):
                         )
                     )
                 if level and i == self.num_res_blocks[level]:  # self.num_res_blocks -- [2, 2, 2] or [2, 2, 2, 2]
-                    layers.append(TimestepEmbedUpsample(ch, out_channels=ch))
+                    # self.output_blocks[2], [5] or [2], [5], [8], [3, 2, 1] ==> {2, 5, 8} == 2 + 3 * (3 - level)
+                    if level != 1: # level == 1 means last layer for reverse channel_mult
+                        layers.append(TimestepEmbedUpsample(ch, out_channels=ch))
+                    else:
+                        layers.append(TimestepEmbedUpsample(ch, out_channels=ch, scale2x=False))
                     ds //= 2
                 self.output_blocks.append(TimestepEmbedSequential(*layers))
 
@@ -335,7 +349,8 @@ class UNetModel(nn.Module):
             load_unet_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
-
+        self.half().eval()
+        count_model_params(self)
 
     def forward(self, x, timesteps, context, y, control: Dict[str, List[torch.Tensor]]):
         # x.shape -- [2, 4, 104, 157]
@@ -361,7 +376,7 @@ class UNetModel(nn.Module):
         emb = emb + self.label_emb(y)
 
         h = x
-        for id, module in enumerate(self.input_blocks):  # len(self.input_blocks) -- 9
+        for id, module in enumerate(self.input_blocks):  # len(self.input_blocks) -- 9 or 12
             for layer in module:
                 h = layer(h, emb, context)
             hs.append(h)
@@ -374,7 +389,7 @@ class UNetModel(nn.Module):
             if ctrl is not None:
                 h += ctrl
 
-        for id, module in enumerate(self.output_blocks):  # len(self.output_blocks) -- 9
+        for id, module in enumerate(self.output_blocks):  # len(self.output_blocks) -- 9 or 12
             hsp = hs.pop()
             if "output" in control and len(control["output"]) > 0:
                 ctrl = control["output"].pop()
@@ -387,9 +402,10 @@ class UNetModel(nn.Module):
             for layer in module:
                 h = layer(h, emb, context)
 
-            if len(hs) > 0:
-                B, C, H, W = hs[-1].size()
-                h = F.interpolate(h, size=(H, W), mode="nearest")  # Restore to old size for upsample 2x
+            # xxxx8888
+            # if len(hs) > 0:
+            #     B, C, H, W = hs[-1].size()
+            #     h = F.interpolate(h, size=(H, W), mode="nearest")  # Restore to old size for upsample 2x
 
         output = self.out(h)
         # if os.environ.get('SDXL_DEBUG') is not None:
@@ -400,25 +416,21 @@ class UNetModel(nn.Module):
 
 def create_base_unet_model():
     model = UNetModel(version="base_1.0")
-    model.half().eval()
     return model
 
 
 def create_refiner_unet_model():
     model = UNetModel(version="refiner_1.0")
-    model.half().eval()
     return model
 
 
 if __name__ == "__main__":
     model = create_base_unet_model()
-    count_model_params(model)
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")
 
     model = create_refiner_unet_model()
-    count_model_params(model)
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")
 
     # # todos.debug.output_weight(model.state_dict())

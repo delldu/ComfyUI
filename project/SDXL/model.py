@@ -15,6 +15,13 @@ import numpy as np
 from SDXL.ksampler import (
     KSampler,
 )
+from SDXL.clip_text import (
+    CreatorCLIPTextEncoder,
+    RefinerCLIPTextEncoder,
+)
+from SDXL.vae import (
+    AutoEncoder,
+)
 
 from SDXL.util import (
     Timestep,
@@ -25,10 +32,12 @@ import todos
 import pdb
 
 
-class SDXLCreator(KSampler):
+class ImageCreator(KSampler):
     def __init__(self):
         super().__init__(version="base_1.0")
         self.embedder = Timestep(256)
+        self.clip_model = CreatorCLIPTextEncoder()
+        self.vae_model = AutoEncoder()
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -49,10 +58,13 @@ class SDXLCreator(KSampler):
         return torch.cat((pooled.to(flat.device), flat), dim=1).to(pooled.device)
 
 
-class SDXLRefiner(KSampler):
+class ImageRefiner(KSampler):
     def __init__(self):
         super().__init__(version="refiner_1.0")
         self.embedder = Timestep(256)
+        # unet_model, lora_model(x)
+        self.clip_model = RefinerCLIPTextEncoder()
+        self.vae_model = AutoEncoder()
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -73,14 +85,13 @@ class SDXLRefiner(KSampler):
 
 
 if __name__ == "__main__":
-    model = SDXLCreator()
+    model = ImageCreator()
+    
+    torch.save(model.state_dict(), "models/ImageCreator.pth")
     model = torch.jit.script(model)
-    print(model)
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")
 
-
-    model = SDXLRefiner()
+    model = ImageRefiner()
+    torch.save(model.state_dict(), "models/ImageRefiner.pth")
     model = torch.jit.script(model)
-    print(model)
-
-
-    pdb.set_trace()
+    print(f"torch.jit.script({model.__class__.__name__}) OK !")
