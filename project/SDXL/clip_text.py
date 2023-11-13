@@ -12,6 +12,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+
 from SDXL.util import (
     DictToClass,
     load_base_clip_text_model_weight,
@@ -377,13 +378,14 @@ class SDXLClipG(nn.Module):
 
 
 class CreatorCLIPTextEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, preload=True):
         super().__init__()
         self.clip_l = SDXLClipL()
         self.clip_l.layer_norm_hidden_state = False  # Base version
         self.clip_g = SDXLClipG()
 
-        load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+        if preload:
+            load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
@@ -401,11 +403,12 @@ class CreatorCLIPTextEncoder(nn.Module):
 
 
 class RefinerCLIPTextEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, preload=True):
         super().__init__()
         self.clip_g = SDXLClipG()
 
-        load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        if preload:
+            load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()

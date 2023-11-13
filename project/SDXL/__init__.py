@@ -15,8 +15,6 @@ import torch.nn as nn
 
 from SDXL.util import (
     DictToClass,
-    state_dict_load,
-    state_dict_filter,
 )
 
 from SDXL.model import (
@@ -28,9 +26,7 @@ from SDXL.vae import (
     create_vae_model,
 )
 
-# from SDXL.clip_text import (
-#     create_clip_text_model,
-# )
+
 from SDXL.clip_vision import (
     create_clip_vision_model,
 )

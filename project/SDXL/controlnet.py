@@ -29,8 +29,6 @@ from SDXL.attention import (
 
 from SDXL.unet import (
     TimestepEmbedSequential,
-    TimestepEmbedResBlock,
-    TimestepEmbedDownsample,
 )
 
 from typing import Dict, List
@@ -55,9 +53,6 @@ def update_lora_weight(obj, key, value):
 
 
 def load_ctrl_lora_weight(model, model_path="models/control-lora-canny-rank128.safetensors", unet_weight=None):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
@@ -90,12 +85,22 @@ class ControlLoraOps:
     class Linear(nn.Module):
         def __init__(self, in_features, out_features, bias=True):
             super().__init__()
+            self.biasx = bias
             self.in_features = in_features
             self.out_features = out_features
             self.weight = nn.Parameter(torch.zeros(out_features, in_features), requires_grad=False)
-            self.bias = nn.Parameter(torch.zeros(out_features), requires_grad=False)
+            if bias:
+                self.bias = nn.Parameter(torch.zeros(out_features), requires_grad=False)
+            else:
+                self.bias = None
             self.up = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False)
-            self.down = nn.Parameter(torch.zeros(out_features, 128), requires_grad=False)
+            self.down = nn.Parameter(torch.zeros(128, in_features), requires_grad=False)
+
+            # lora.Linear(in_features=320, out_features=1280, weight=Parameter([1280, 320]), bias=Parameter([1280]), 
+            #     up=Parameter([1280, 128(r)]), down=Parameter([128(r), 320]))
+            # lora.Linear(in_features=1280, out_features=640, weight=Parameter([640, 1280]), bias=Parameter([640]), 
+            #     up=Parameter([640, 128(r)]), down=Parameter([128(r), 1280]))
+
 
         def forward(self, input):
             return F.linear(input, self.weight + torch.mm(self.up, self.down), self.bias)
@@ -103,76 +108,179 @@ class ControlLoraOps:
         def __repr__(self):
             s = f"lora.Linear(in_features={self.in_features}, out_features={self.out_features}"
             s += f", weight=Parameter({list(self.weight.size())})"
+            if self.bias is not None:
+                s += f", bias=Parameter({list(self.bias.size())})"
+            if self.up is not None:
+                s += f", up=Parameter({list(self.up.size())})"
+            if self.down is not None:
+                s += f", down=Parameter({list(self.down.size())})"
+            s += ")"
+            return s
+
+    class Conv2d(nn.Module):
+        def __init__(self,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=1,
+            padding=0,
+            dilation=1,
+            groups=1,
+            rank=128,
+        ):
+            super().__init__()
+            self.in_channels = in_channels
+            self.out_channels = out_channels
+            self.kernel_size = kernel_size
+            self.stride = stride
+            self.padding = padding
+            self.dilation = dilation
+            self.groups = groups
+            self.rank = rank
+            self.weight = nn.Parameter(
+                torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
+            )
+            self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
+            if rank > 0:
+                self.up = nn.Parameter(torch.zeros(out_channels, rank, 1, 1), requires_grad=False)
+                self.down = nn.Parameter(
+                    torch.zeros(rank, in_channels, kernel_size, kernel_size), requires_grad=False
+                )
+            else:
+                self.up = None
+                self.down = None
+            # lora.Conv2d(in_channels=4, out_channels=320, kernel_size=3, stride=1, weight=Parameter([320, 4, 3, 3]), 
+            #     bias=Parameter([320]), up=Parameter([320, 4(r), 1, 1]), down=Parameter([4(r), 4, 3, 3]))
+            # lora.Conv2d(in_channels=320, out_channels=640, kernel_size=3, stride=1, weight=Parameter([640, 320, 3, 3]), 
+            #     bias=Parameter([640]), up=Parameter([640, 128(r), 1, 1]), down=Parameter([128(r), 320, 3, 3]))
+
+
+        def forward(self, input, emb=None, context=None):  # x, [emb, context]
+            if self.rank > 0:
+                return F.conv2d(
+                    input,
+                    self.weight
+                    + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape),
+                    self.bias,
+                    self.stride,
+                    self.padding,
+                    self.dilation,
+                    self.groups,
+                )
+            else:
+                return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+        def __repr__(self):
+            s = f"lora.Conv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
+            s += f", kernel_size={self.kernel_size}, stride={self.stride}"
+            s += f", weight=Parameter({list(self.weight.size())})"
             s += f", bias=Parameter({list(self.bias.size())})"
-            s += f", up=Parameter({list(self.up.size())})"
-            s += f", down=Parameter({list(self.up.size())})"
+            if self.up is not None:
+                s += f", up=Parameter({list(self.up.size())})"
+            if self.down is not None:
+                s += f", down=Parameter({list(self.down.size())})"
             s += ")"
             return s
 
 
-class TimestepEmbedConv2d(nn.Module):
-    def __init__(self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        padding=0,
-        dilation=1,
-        groups=1,
-        up_down=True,
+
+class TimestepEmbedResBlock(nn.Module):
+    """
+    Shared by controlnet.py && unet.py
+    """
+    def __init__(self, channels, emb_channels, out_channels, use_conv=False, operations=None,  # UNetOps(), ControlnetOps()
     ):
         super().__init__()
-        self.in_channels = in_channels
+        self.channels = channels
+        self.emb_channels = emb_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
-        self.groups = groups
-        self.up_down = up_down
-        self.weight = nn.Parameter(
-            torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
-        )
-        self.bias = nn.Parameter(torch.zeros(out_channels), requires_grad=False)
-        # if up_down:
-        #     self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
-        #     self.down = nn.Parameter(
-        #         torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
-        #     )
-        # else:
-        #     self.up = None
-        #     self.down = None
-        self.up = nn.Parameter(torch.zeros(out_channels, in_channels, 1, 1), requires_grad=False)
-        self.down = nn.Parameter(
-            torch.zeros(out_channels, in_channels, kernel_size, kernel_size), requires_grad=False
-        )
 
-    def forward(self, input, emb=None, context=None):  # x, [emb, context]
-        if self.up_down:
-            return F.conv2d(
-                input,
-                self.weight
-                + torch.mm(self.up.flatten(start_dim=1), self.down.flatten(start_dim=1)).reshape(self.weight.shape),
-                self.bias,
-                self.stride,
-                self.padding,
-                self.dilation,
-                self.groups,
-            )
+        self.in_layers = nn.Sequential(
+            nn.GroupNorm(32, channels),
+            nn.SiLU(),
+            operations.Conv2d(channels, self.out_channels, 3, padding=1, rank=128),
+        )
+        # (in_layers): Sequential(
+        #     (0): GroupNorm(32, 1280, eps=1e-05, affine=True)
+        #     (1): SiLU()
+        #     (2): lora.Conv2d(in_channels=1280, out_channels=1280, kernel_size=3, stride=1, 
+        #         weight=Parameter([1280, 1280, 3, 3]), bias=Parameter([1280]), 
+        #         up=Parameter([1280, 128, 1, 1]), down=Parameter([128, 1280, 3, 3]))
+        # )
+        # (in_layers): Sequential(
+        #   (0): GroupNorm(32, 640, eps=1e-05, affine=True)
+        #   (1): SiLU()
+        #   (2): lora.Conv2d(in_channels=640, out_channels=1280, kernel_size=3, stride=1, 
+        #     weight=Parameter([1280, 640, 3, 3]), bias=Parameter([1280]), 
+        #     up=Parameter([1280, 128, 1, 1]), down=Parameter([128, 640, 3, 3]))
+        # )
+
+        self.emb_layers = nn.Sequential(
+            nn.SiLU(),
+            operations.Linear(emb_channels, self.out_channels, bias=True),
+        )
+        # (emb_layers): Sequential(
+        #     (0): SiLU()
+        #     (1): lora.Linear(in_features=1280, out_features=1280, weight=Parameter([1280, 1280]), bias=Parameter([1280]), 
+        #         up=Parameter([1280, 128]), down=Parameter([128, 1280]))
+        # )
+
+        self.out_layers = nn.Sequential(
+            nn.GroupNorm(32, self.out_channels),
+            nn.SiLU(),
+            nn.Dropout(p=0.0),  # do not delete it !!!
+            zero_module(operations.Conv2d(self.out_channels, self.out_channels, 3, padding=1, rank=128)),
+        )
+        # (out_layers): Sequential(
+        #     (0): GroupNorm(32, 1280, eps=1e-05, affine=True)
+        #     (1): SiLU()
+        #     (2): Dropout(p=0.0, inplace=False)
+        #     (3): lora.Conv2d(in_channels=1280, out_channels=1280, kernel_size=3, stride=1, 
+        #         weight=Parameter([1280, 1280, 3, 3]), bias=Parameter([1280]), 
+        #         up=Parameter([1280, 128, 1, 1]), down=Parameter([128, 1280, 3, 3]))
+        # )
+
+        if self.out_channels == channels:
+            self.skip_connection = nn.Identity()
+        elif use_conv:
+            pdb.set_trace()
+            self.skip_connection = operations.Conv2d(channels, self.out_channels, 3)
         else:
-            return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            # self.skip_connection = nn.Conv2d(channels, self.out_channels, 1)
+            # xxxx_dddd
+            self.skip_connection = operations.Conv2d(channels, self.out_channels, 1)
+        # (skip_connection): lora.Conv2d(in_channels=320, out_channels=640, kernel_size=1, stride=1, 
+        #     weight=Parameter([640, 320, 1, 1]), bias=Parameter([640]), 
+        #     up=Parameter([640, 128, 1, 1]), down=Parameter([128, 320, 1, 1]))
 
-    def __repr__(self):
-        s = f"TimestepEmbedConv2d(in_channels={self.in_channels}, out_channels={self.out_channels}"
-        s += f", kernel_size={self.kernel_size}, stride={self.stride}"
-        s += f", weight=Parameter({list(self.weight.size())})"
-        s += f", bias=Parameter({list(self.bias.size())})"
-        if self.up is not None:
-            s += f", up=Parameter({list(self.up.size())})"
-        if self.down is not None:
-            s += f", down=Parameter({list(self.up.size())})"
-        s += ")"
-        return s
+    def forward(self, x, emb, context):  # x, emb, [context]
+        h = self.in_layers(x)
+        emb_out = self.emb_layers(emb).type(h.dtype)
+        while len(emb_out.shape) < len(h.shape):
+            emb_out = emb_out[..., None]
+
+        h = h + emb_out
+        h = self.out_layers(h)
+
+        return self.skip_connection(x) + h
+
+
+class TimestepEmbedDownsample(nn.Module):
+    """
+    A downsampling layer with an optional convolution.
+    :param channels: channels in the inputs and outputs.
+    """
+
+    def __init__(self, channels, out_channels=None, padding=1, operations=ControlLoraOps()):
+        super().__init__()
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        # xxxx_dddd
+        self.op = operations.Conv2d(self.channels, self.out_channels, 3, stride=2, padding=padding)
+
+    def forward(self, x, emb, context):  # x, [emb, context]
+        assert x.shape[1] == self.channels
+        return self.op(x, emb, context)
 
 
 class TimestepEmbedSiLU(nn.SiLU):
@@ -181,7 +289,7 @@ class TimestepEmbedSiLU(nn.SiLU):
 
 
 class ControlNot(nn.Module):
-    def __init__(self):
+    def __init__(self, preload=True):
         super().__init__()
 
     def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
@@ -202,6 +310,7 @@ class ControlNet(nn.Module):
         adm_in_channels=2816,
         transformer_depth_middle=10,
         operations=ControlLoraOps(),
+        preload=True,
     ):
         super().__init__()
 
@@ -225,40 +334,42 @@ class ControlNet(nn.Module):
         )
 
         self.input_blocks = nn.ModuleList(
-            [TimestepEmbedSequential(TimestepEmbedConv2d(in_channels, model_channels, 3, padding=1))]
+            [TimestepEmbedSequential(operations.Conv2d(in_channels, model_channels, 3, padding=1, rank=4))]
         )
+
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels)])
 
         self.input_hint_block = TimestepEmbedSequential(
-            TimestepEmbedConv2d(hint_channels, 16, 3, padding=1, up_down=False),
+            operations.Conv2d(hint_channels, 16, 3, padding=1, rank=0), # [16, 3, 3, 3]
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(16, 16, 3, padding=1, up_down=False),
+            operations.Conv2d(16, 16, 3, padding=1, rank=0),
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(16, 32, 3, padding=1, stride=2, up_down=False),
+            operations.Conv2d(16, 32, 3, padding=1, stride=2, rank=0), # [32, 16, 3, 3]
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(32, 32, 3, padding=1),
+            operations.Conv2d(32, 32, 3, padding=1, rank=0),
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(32, 96, 3, padding=1, stride=2, up_down=False),
+            operations.Conv2d(32, 96, 3, padding=1, stride=2, rank=0), #[96, 32, 3, 3]
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(96, 96, 3, padding=1),
+            operations.Conv2d(96, 96, 3, padding=1, rank=0),
             TimestepEmbedSiLU(),
-            TimestepEmbedConv2d(96, 256, 3, padding=1, stride=2, up_down=False),
+            operations.Conv2d(96, 256, 3, padding=1, stride=2, rank=0), # [256, 96, 3, 3]
             TimestepEmbedSiLU(),
-            zero_module(TimestepEmbedConv2d(256, model_channels, 3, padding=1, up_down=False)),
+            zero_module(operations.Conv2d(256, model_channels, 3, padding=1, rank=0)), # [320, 256, 3, 3]
         )
 
         ch = model_channels
         ds = 1
-        for level, mult in enumerate(channel_mult):
-            for nr in range(self.num_res_blocks[level]):
+        for level, mult in enumerate(channel_mult): # channel_mult=(1, 2, 4)
+            for nr in range(self.num_res_blocks[level]): # [2, 2, 2]
                 layers = [
                     TimestepEmbedResBlock(
                         ch,
-                        time_embed_dim,
-                        out_channels=mult * model_channels,
+                        time_embed_dim, # 1280
+                        out_channels=mult * model_channels, # 320, 640, 1280
                         operations=operations,
                     )
                 ]
+
                 ch = mult * model_channels
                 if ds in attention_resolutions:
                     num_heads = ch // num_head_channels
@@ -267,8 +378,8 @@ class ControlNet(nn.Module):
                     layers.append(
                         TimestepEmbedSpatialTransformer(
                             ch,
-                            num_heads,
-                            dim_head,
+                            ch // num_head_channels, # num_heads,
+                            num_head_channels, # dim_head,
                             depth=transformer_depth[level],
                             context_dim=context_dim,
                             operations=operations,
@@ -277,36 +388,43 @@ class ControlNet(nn.Module):
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self.zero_convs.append(self.make_zero_conv(ch))
             if level != len(channel_mult) - 1:
-                self.input_blocks.append(TimestepEmbedSequential(TimestepEmbedDownsample(ch, out_channels=ch)))
+                self.input_blocks.append(TimestepEmbedSequential(
+                    TimestepEmbedDownsample(ch, ch)))
+
                 self.zero_convs.append(self.make_zero_conv(ch))
                 ds *= 2
 
-        num_heads = ch // num_head_channels
-        dim_head = num_head_channels
+
+        # num_heads = ch // num_head_channels
+        # dim_head = num_head_channels
+
         self.middle_block = TimestepEmbedSequential(
-            TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
+            TimestepEmbedResBlock(ch, time_embed_dim, ch, operations=operations),
+
             TimestepEmbedSpatialTransformer(
                 ch,
-                num_heads,
-                dim_head,
+                ch // num_head_channels, #num_heads,
+                num_head_channels, # dim_head,
                 depth=transformer_depth_middle,
                 context_dim=context_dim,
                 operations=operations,
             ),
-            TimestepEmbedResBlock(ch, time_embed_dim, operations=operations),
+            TimestepEmbedResBlock(ch, time_embed_dim, ch, operations=operations),
         )
         self.middle_block_out = self.make_zero_conv(ch)
 
-        load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
+        pdb.set_trace()
+
+        if preload:
+            load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
         count_model_params(self)
 
-
-    def make_zero_conv(self, channels):
+    def make_zero_conv(self, channels, operations=ControlLoraOps()):
         return TimestepEmbedSequential(
-            zero_module(TimestepEmbedConv2d(channels, channels, 1, padding=0, up_down=False))
+            zero_module(operations.Conv2d(channels, channels, 1, padding=0, rank=0))
         )
 
     def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
@@ -374,6 +492,7 @@ def create_sketch_control_lora():
 
 if __name__ == "__main__":
     model = create_canny_control_lora()
+    pdb.set_trace()
 
     class_name = model.__class__.__name__
     model = torch.jit.script(model)
@@ -384,3 +503,24 @@ if __name__ == "__main__":
     # model = create_depth_control_lora()
     # model = create_color_control_lora()
     # # model = create_sketch_control_lora()
+
+
+    # size mismatch for lora_model.time_embed.0.up: copying a param with shape torch.Size([1280, 128]) from checkpoint, 
+    #     the shape in current model is torch.Size([128, 1280]).
+
+    # size mismatch for lora_model.time_embed.0.down: copying a param with shape torch.Size([128, 320]) from checkpoint, 
+    #     the shape in current model is torch.Size([1280, 128]).
+
+
+    # size mismatch for lora_model.time_embed.2.up: copying a param with shape torch.Size([1280, 128]) from checkpoint, 
+    #     the shape in current model is torch.Size([128, 1280]).
+    # size mismatch for lora_model.time_embed.2.down: copying a param with shape torch.Size([128, 1280]) from checkpoint, 
+    #     the shape in current model is torch.Size([1280, 128]).
+
+    # Sequential(
+    #   (0): lora.Linear(in_features=320, out_features=1280, weight=Parameter([1280, 320]), bias=Parameter([1280]), 
+    #     up=Parameter([1280, 128]), down=Parameter([1280, 128]))
+    #   (1): SiLU()
+    #   (2): lora.Linear(in_features=1280, out_features=1280, weight=Parameter([1280, 1280]), bias=Parameter([1280]), 
+    #     up=Parameter([1280, 128]), down=Parameter([1280, 128]))
+    # )

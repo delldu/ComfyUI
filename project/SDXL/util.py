@@ -10,6 +10,7 @@
 #
 import os
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,6 +26,11 @@ class DictToClass(object):
     def __init__(self, _obj):
         if _obj:
             self.__dict__.update(_obj)
+
+def load_model_weight(model, model_path):
+    state_dict = state_dict_load(model_path)
+    model.load_state_dict(state_dict)
+
 
 def state_dict_load(model_path):
     cdir = os.path.dirname(__file__)
@@ -158,49 +164,24 @@ def refiner_clip_text_state_dict(state_dict):
 
 
 def load_base_clip_text_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
     state_dict = state_dict_load(model_path)
     target_state_dict = base_clip_text_state_dict(state_dict)
     target_state_dict["clip_l.text_projection"] = model.clip_l.text_projection
-    # target_state_dict["clip_l.logit_scale"] = model.clip_l.logit_scale
     target_state_dict["clip_g.transformer.text_model.embeddings.position_ids"] = model.clip_g.transformer.text_model.embeddings.position_ids
 
-    m, u = model.load_state_dict(target_state_dict, strict=False)
-    if len(m) > 0:
-        print(f"Load weight from {model_path} missing keys: ", m)
-    if len(u) > 0:
-        print(f"Load weight from {model_path} leftover keys: ", u)
+    model.load_state_dict(target_state_dict)
+
 
 
 def load_refiner_clip_text_model_weight(model, model_path="models/sd_xl_refiner_1.0.safetensors"):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
     state_dict = state_dict_load(model_path)
     target_state_dict = refiner_clip_text_state_dict(state_dict)
     target_state_dict["clip_g.transformer.text_model.embeddings.position_ids"] = model.clip_g.transformer.text_model.embeddings.position_ids
     
-    m, u = model.load_state_dict(target_state_dict, strict=False)
-    if len(m) > 0:
-        print(f"Load weight from {model_path} missing keys: ", m)
-    if len(u) > 0:
-        print(f"Load weight from {model_path} leftover keys: ", u)
-
-
-def load_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
-    state_dict = state_dict_load(model_path)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(target_state_dict)
 
 
 def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
     state_dict = state_dict_load(model_path)
     state_dict.pop("model_ema.decay")
     state_dict.pop("model_ema.num_updates")
@@ -209,9 +190,6 @@ def load_vae_model_weight(model, model_path="models/sdxl_vae.safetensors"):
 
 
 def load_unet_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"):
-    if os.environ.get("SDXL_LOAD") == "NO":
-        return
-
     state_dict = state_dict_load(model_path)
     target_state_dict = state_dict_filter(state_dict, ["model.diffusion_model."], remove_prefix=True)
     model.load_state_dict(target_state_dict)
@@ -220,9 +198,9 @@ def load_unet_model_weight(model, model_path="models/sd_xl_base_1.0.safetensors"
 def count_model_params(model, verbose=True):
     total_params = sum(p.numel() for p in model.parameters())
     if verbose:
-        print("-" * 120)
+        # print("-" * 120)
         print(f"{model.__class__.__name__} has {total_params*1.e-6:.2f}M params.")
-        print("-" * 120)
+        # print("-" * 120)
 
     return total_params
 
@@ -280,11 +258,11 @@ def image_crop_32x32(image):
     return image
 
 
-def load_image(filename):
-    image = Image.open(filename).convert("RGB")
-    image = np.array(image).astype(np.float32) / 255.0
-    image = torch.from_numpy(image)[None,].movedim(-1, 1)  # permute(0, 3, 1, 2) ==> BxCxHxW
-    return image_crop_32x32(image)
+# def load_image(filename):
+#     image = Image.open(filename).convert("RGB")
+#     image = np.array(image).astype(np.float32) / 255.0
+#     image = torch.from_numpy(image)[None,].movedim(-1, 1)  # permute(0, 3, 1, 2) ==> BxCxHxW
+#     return image_crop_32x32(image)
 
 
 def load_clip_vision_image(filename):
@@ -304,6 +282,14 @@ def load_torch_image(image):
     # image = F.interpolate(image, size=(1024, 1024), mode="bilinear", align_corners=False)
     return image_crop_32x32(image)
 
+
+def vram_load(model):
+    pass
+
+
+def vram_unload(model):
+    pass
+    
 
 if __name__ == "__main__":
     image = torch.randn(2, 3, 1011, 777)

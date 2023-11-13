@@ -70,16 +70,16 @@ def get_karras_sigmas(n:int, sigma_min:float=0.0291675, sigma_max:float=14.61464
 
 
 class KSampler(nn.Module):
-    def __init__(self, version):
+    def __init__(self, version, preload=True):
         super().__init__()
         self.version = version
 
         self.scale_factor = 0.13025
-        self.unet_model = UNetModel(version=version)
+        self.unet_model = UNetModel(version=version, preload=preload)
         if version == "base_1.0":
-            self.lora_model = ControlNet()
+            self.lora_model = ControlNet(preload=preload)
         else:
-            self.lora_model = ControlNot()
+            self.lora_model = ControlNot(preload=preload)
         self.register_schedule()
 
         for param in self.parameters():

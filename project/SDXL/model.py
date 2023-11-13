@@ -25,6 +25,8 @@ from SDXL.vae import (
 
 from SDXL.util import (
     Timestep,
+    load_model_weight,
+    count_model_params,
 )
 from typing import Dict
 
@@ -33,12 +35,21 @@ import pdb
 
 
 class ImageCreator(KSampler):
-    def __init__(self):
-        super().__init__(version="base_1.0")
+    def __init__(self, preload=False):
+        super().__init__(version="base_1.0", preload=preload)
         self.embedder = Timestep(256)
         # unet_model, lora_model
-        self.clip_model = CreatorCLIPTextEncoder()
-        self.vae_model = AutoEncoder()
+        self.clip_model = CreatorCLIPTextEncoder(preload=preload)
+        self.vae_model = AutoEncoder(preload=preload)
+
+        if not preload: # Fast mode
+            self.lora_model.load_state_dict(torch.load("/tmp/lora.pth"))
+
+            # load_model_weight(self, "models/ImageCreator.pth")
+        for param in self.parameters():
+            param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -60,12 +71,19 @@ class ImageCreator(KSampler):
 
 
 class ImageRefiner(KSampler):
-    def __init__(self):
-        super().__init__(version="refiner_1.0")
+    def __init__(self, preload=False):
+        super().__init__(version="refiner_1.0", preload=preload)
         self.embedder = Timestep(256)
         # unet_model, lora_model(x)
-        self.clip_model = RefinerCLIPTextEncoder()
-        self.vae_model = AutoEncoder()
+        self.clip_model = RefinerCLIPTextEncoder(preload=preload)
+        self.vae_model = AutoEncoder(preload=preload)
+
+        if not preload: # Fast mode
+            load_model_weight(self, "models/ImageRefiner.pth")
+        for param in self.parameters():
+            param.requires_grad = False
+        self.half().eval()
+        count_model_params(self)
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -86,17 +104,17 @@ class ImageRefiner(KSampler):
 
 
 if __name__ == "__main__":
-    model = ImageCreator()
-    torch.save(model.state_dict(), "models/ImageCreator.pth")
+    model = ImageCreator(preload=False)
+    # torch.save(model.state_dict(), "models/ImageCreator.pth")
 
-    class_name = model.__class__.__name__
-    model = torch.jit.script(model)
-    print(f"torch.jit.script({model.__class__.__name__}) OK !")
+    # class_name = model.__class__.__name__
+    # model = torch.jit.script(model)
+    # print(f"torch.jit.script({class_name}) OK !")
 
 
-    model = ImageRefiner()
-    torch.save(model.state_dict(), "models/ImageRefiner.pth")
+    # model = ImageRefiner(preload=False)
+    # torch.save(model.state_dict(), "models/ImageRefiner.pth")
 
-    class_name = model.__class__.__name__
-    model = torch.jit.script(model)
-    print(f"torch.jit.script({class_name}) OK !")
+    # class_name = model.__class__.__name__
+    # model = torch.jit.script(model)
+    # print(f"torch.jit.script({class_name}) OK !")

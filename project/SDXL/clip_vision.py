@@ -16,6 +16,7 @@ import torchvision.transforms as T
 
 from SDXL.util import (
     DictToClass,
+
     load_model_weight,
     load_clip_vision_image,
     count_model_params,
@@ -98,7 +99,7 @@ class CLIPVisionEncoder(nn.Module):
     """
     CLIPVisionModelWithProjection
     """
-    def __init__(self):
+    def __init__(self, preload=True):
         super().__init__()
         # come from comfy/clip_vision_config_g.json
         config = DictToClass(
@@ -124,7 +125,8 @@ class CLIPVisionEncoder(nn.Module):
         )
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
-        load_model_weight(self, model_path="models/clip_vision_g.safetensors")
+        if preload:
+            load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
         self.noise_augmentor = CLIPEmbedNoiseAugmentation()
         self.normal = T.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])

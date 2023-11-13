@@ -57,18 +57,25 @@ def Normalize(in_channels):
 
 class CrossAttention(nn.Module):
     def __init__(
-        self, query_dim, context_dim=None, heads=8, dim_head=64, operations=None
+        self, query_dim, context_dim=None, heads=8, dim_head=64, bias=False, operations=None
     ):  # UNetOps(), ControlnetOps()
         super().__init__()
+
+        self.bias = bias
+
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
 
         self.heads = heads
         self.dim_head = dim_head
 
-        self.to_q = operations.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = operations.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = operations.Linear(context_dim, inner_dim, bias=False)
+        # self.to_q = operations.Linear(query_dim, inner_dim, bias=False)
+        # self.to_k = operations.Linear(context_dim, inner_dim, bias=False)
+        # self.to_v = operations.Linear(context_dim, inner_dim, bias=False)
+
+        self.to_q = operations.Linear(query_dim, inner_dim, bias=self.bias)
+        self.to_k = operations.Linear(context_dim, inner_dim, bias=self.bias)
+        self.to_v = operations.Linear(context_dim, inner_dim, bias=self.bias)
 
         self.to_out = nn.Sequential(
             operations.Linear(inner_dim, query_dim),
@@ -104,11 +111,11 @@ class BasicTransformerBlock(nn.Module):
     def __init__(self, dim, n_heads, d_head, context_dim=None, operations=None):  # UNetOps(), ControlnetOps()
         super().__init__()
         self.attn1 = CrossAttention(
-            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=None, operations=operations
+            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=None, bias=False, operations=operations
         )
         self.ff = FeedForward(dim, operations=operations)
         self.attn2 = CrossAttention(
-            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=context_dim, operations=operations
+            query_dim=dim, heads=n_heads, dim_head=d_head, context_dim=context_dim, bias=False, operations=operations
         )
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)

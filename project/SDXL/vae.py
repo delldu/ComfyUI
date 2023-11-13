@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from SDXL.util import (
+    load_model_weight,
     count_model_params,
     load_vae_model_weight,
 )
@@ -46,7 +47,7 @@ class AutoEncoder(nn.Module):
               target: torch.nn.Identity
     """
 
-    def __init__(self, embed_dim=4, z_channels=4):
+    def __init__(self, embed_dim=4, z_channels=4, preload=True):
         super().__init__()
         self.encoder = Encoder()
         self.quant_conv = nn.Conv2d(2 * z_channels, 2 * embed_dim, 1)
@@ -54,8 +55,9 @@ class AutoEncoder(nn.Module):
         self.post_quant_conv = nn.Conv2d(embed_dim, z_channels, 1)
         self.decoder = Decoder()  # model size 190 M
 
-        # https://huggingface.co/stabilityai/sdxl-vae, !!! better performance !!!
-        load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+        if preload:
+            # https://huggingface.co/stabilityai/sdxl-vae, !!! better performance !!!
+            load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
@@ -359,6 +361,8 @@ def create_vae_model():
 
 if __name__ == "__main__":
     model = create_vae_model()
+    pdb.set_trace()
+
     torch.save(model.state_dict(), "models/AutoEncoder.pth")
 
     class_name = model.__class__.__name__

@@ -41,7 +41,6 @@ class UNetOps:
             if bias:
                 self.bias = nn.Parameter(torch.empty(out_features), requires_grad=False)
             else:
-                # CrossAttention() ==> pdb.set_trace()
                 self.register_parameter("bias", None)
 
         def forward(self, input):
@@ -49,9 +48,9 @@ class UNetOps:
 
         def __repr__(self):
             s = f"unet.Linear(in_features={self.in_features}, out_features={self.out_features}"
-            if self.weight is not None:
+            if self.weight:
                 s += f", weight=Parameter({list(self.weight.size())})"
-            if self.bias is not None:
+            if self.bias:
                 s += f", bias=Parameter({list(self.bias.size())})"
             s += ")"
             return s
@@ -107,6 +106,7 @@ class TimestepEmbedDownsample(nn.Module):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
+        # xxxx_dddd
         self.op = nn.Conv2d(self.channels, self.out_channels, 3, stride=2, padding=padding)
 
     def forward(self, x, emb, context):  # x, [emb, context]
@@ -210,6 +210,7 @@ class UNetModel(nn.Module):
         adm_in_channels=2816, # 2560
         transformer_depth_middle=10, # 4
         operations=UNetOps(),
+        preload=True,
     ):
         super().__init__()
         self.version = version
@@ -343,10 +344,11 @@ class UNetModel(nn.Module):
             zero_module(nn.Conv2d(model_channels, out_channels, 3, padding=1)),
         )
 
-        if version == "base_1.0":
-            load_unet_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
-        else:
-            load_unet_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        if preload:
+            if version == "base_1.0":
+                load_unet_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
+            else:
+                load_unet_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
