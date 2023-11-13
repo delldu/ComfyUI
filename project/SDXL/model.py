@@ -43,9 +43,8 @@ class ImageCreator(KSampler):
         self.vae_model = AutoEncoder(preload=preload)
 
         if not preload: # Fast mode
-            self.lora_model.load_state_dict(torch.load("/tmp/lora.pth"))
-
-            # load_model_weight(self, "models/ImageCreator.pth")
+            # self.lora_model.load_state_dict(torch.load("/tmp/lora.pth"))
+            load_model_weight(self, "models/ImageCreator.pth")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()

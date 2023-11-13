@@ -413,8 +413,6 @@ class ControlNet(nn.Module):
         )
         self.middle_block_out = self.make_zero_conv(ch)
 
-        pdb.set_trace()
-
         if preload:
             load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
         for param in self.parameters():
