@@ -35,20 +35,22 @@ import pdb
 
 
 class ImageCreator(KSampler):
-    def __init__(self, preload=False):
-        super().__init__(version="base_1.0", preload=preload)
+    def __init__(self, fast_load=True):
+        super().__init__(version="base_1.0", preload=not fast_load)
         self.embedder = Timestep(256)
         # unet_model, lora_model
-        self.clip_model = CreatorCLIPTextEncoder(preload=preload)
-        self.vae_model = AutoEncoder(preload=preload)
+        self.clip_text = CreatorCLIPTextEncoder(preload=not fast_load)
+        self.vae_model = AutoEncoder(preload=not fast_load)
 
-        if not preload: # Fast mode
+        count_model_params(self)
+        if fast_load:
             # self.lora_model.load_state_dict(torch.load("/tmp/lora.pth"))
             load_model_weight(self, "models/ImageCreator.pth")
         for param in self.parameters():
             param.requires_grad = False
-        self.half().eval()
-        count_model_params(self)
+        self.eval()
+        self = torch.compile(self)
+
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -70,19 +72,21 @@ class ImageCreator(KSampler):
 
 
 class ImageRefiner(KSampler):
-    def __init__(self, preload=False):
-        super().__init__(version="refiner_1.0", preload=preload)
+    def __init__(self, fast_load=True):
+        super().__init__(version="refiner_1.0", preload=not fast_load)
         self.embedder = Timestep(256)
         # unet_model, lora_model(x)
-        self.clip_model = RefinerCLIPTextEncoder(preload=preload)
-        self.vae_model = AutoEncoder(preload=preload)
+        self.clip_text = RefinerCLIPTextEncoder(preload=not fast_load)
+        self.vae_model = AutoEncoder(preload=not fast_load)
 
-        if not preload: # Fast mode
+        count_model_params(self)
+        if fast_load:
             load_model_weight(self, "models/ImageRefiner.pth")
         for param in self.parameters():
             param.requires_grad = False
-        self.half().eval()
-        count_model_params(self)
+
+        self.eval()
+        self = torch.compile(self)
 
     def encode_adm(self, cond: Dict[str, torch.Tensor], H:int, W:int, positive:bool=True):
         pooled = cond["pool_encoded"]
@@ -103,16 +107,16 @@ class ImageRefiner(KSampler):
 
 
 if __name__ == "__main__":
-    model = ImageCreator(preload=False)
-    # torch.save(model.state_dict(), "models/ImageCreator.pth")
+    model = ImageCreator(fast_load=False)
+    torch.save(model.state_dict(), "models/ImageCreator.pth")
 
     # class_name = model.__class__.__name__
     # model = torch.jit.script(model)
     # print(f"torch.jit.script({class_name}) OK !")
 
 
-    # model = ImageRefiner(preload=False)
-    # torch.save(model.state_dict(), "models/ImageRefiner.pth")
+    model = ImageRefiner(fast_load=False)
+    torch.save(model.state_dict(), "models/ImageRefiner.pth")
 
     # class_name = model.__class__.__name__
     # model = torch.jit.script(model)

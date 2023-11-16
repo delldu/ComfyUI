@@ -47,9 +47,11 @@ def state_dict_load(model_path):
     _, extension = os.path.splitext(checkpoint)
     if extension.lower() == ".safetensors":
         import safetensors.torch
-        state_dict = safetensors.torch.load_file(checkpoint, device="cpu")
+        # state_dict = safetensors.torch.load_file(checkpoint, device="cpu")
+        state_dict = safetensors.torch.load_file(checkpoint)
     else:
-        state_dict = torch.load(checkpoint, map_location=torch.device("cpu"))
+        # state_dict = torch.load(checkpoint, map_location=torch.device("cpu"))
+        state_dict = torch.load(checkpoint)
     return state_dict
 
 
@@ -284,12 +286,16 @@ def load_torch_image(image):
 
 
 def vram_load(model):
-    pass
-
+    if torch.cuda.is_available():
+        if model.be_half():
+            model.half().cuda()
+        else:
+            model.cuda()
+    else:
+        model.cpu().float()
 
 def vram_unload(model):
-    pass
-    
+    model.cpu()
 
 if __name__ == "__main__":
     image = torch.randn(2, 3, 1011, 777)

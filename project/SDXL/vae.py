@@ -58,18 +58,29 @@ class AutoEncoder(nn.Module):
         if preload:
             # https://huggingface.co/stabilityai/sdxl-vae, !!! better performance !!!
             load_vae_model_weight(self, model_path="models/sdxl_vae.safetensors")
+
         for param in self.parameters():
             param.requires_grad = False
-        self.half().eval()
+
+        self.eval()
         count_model_params(self)
+
+    def be_half(self):
+        return False   # model could be half on cuda ? NO for nan output !!!!!!
+
+    def on_cuda(self):
+        return self.quant_conv.weight.is_cuda # model is on cuda ? 
 
     def forward(self, x):
         z = self.encode(x)
         return self.decode(z)
 
     def encode(self, x):
-        z = 2.0 * x - 1.0  # convert x from [0.0, 1.0] to [-1.0, 1.0]
-        h = self.encoder(z)
+        if self.on_cuda():
+            x = x.cuda()
+
+        x = 2.0 * x - 1.0  # convert x from [0.0, 1.0] to [-1.0, 1.0]
+        h = self.encoder(x)
         moments = self.quant_conv(h)
 
         # Create DiagonalGaussianDistribution
@@ -78,15 +89,18 @@ class AutoEncoder(nn.Module):
         stdvar = torch.exp(0.5 * logvar)
         output = meanvar + stdvar * torch.randn(meanvar.shape).to(device=x.device)
 
-        return output
+        return output.cpu().float()
 
     def decode(self, z):
+        if self.on_cuda():
+            z = z.cuda()
+
         x = self.post_quant_conv(z)
         dec = self.decoder(x)
         # tensor [dec] size: [1, 3, 600, 456], min: -1.524532, max: 1.899036, mean: 0.059854
         out = ((dec + 1.0) / 2.0).clamp(0.0, 1.0)
 
-        return out
+        return out.cpu().float()
 
 
 def nonlinearity(x):
@@ -132,7 +146,7 @@ class ResnetBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
         self.norm2 = Normalize(out_channels)
-        # self.dropout = nn.Dropout(0.0)
+        self.dropout = nn.Dropout(0.0)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         if self.in_channels != self.out_channels:
             self.nin_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
@@ -147,7 +161,7 @@ class ResnetBlock(nn.Module):
 
         h = self.norm2(h)
         h = self.swish(h)  # nonlinearity(h)
-        # h = self.dropout(h)
+        h = self.dropout(h)
         h = self.conv2(h)
 
         if self.in_channels != self.out_channels:
@@ -353,18 +367,18 @@ class Decoder(nn.Module):
         return h
 
 
-def create_vae_model():
-    model = AutoEncoder()
-
-    return model
-
 
 if __name__ == "__main__":
-    model = create_vae_model()
-    pdb.set_trace()
+    model = AutoEncoder()
+    # torch.save(model.state_dict(), "models/AutoEncoder.pth")
 
-    torch.save(model.state_dict(), "models/AutoEncoder.pth")
+    # model.cuda()
+    input = torch.randn(1, 3, 256, 256)
+    with torch.no_grad():
+        output = model(input)
 
-    class_name = model.__class__.__name__
-    model = torch.jit.script(model)
-    print(f"torch.jit.script({class_name}) OK !")
+    todos.debug.output_var("output", output)
+
+    # class_name = model.__class__.__name__
+    # model = torch.jit.script(model)
+    # print(f"torch.jit.script({class_name}) OK !")

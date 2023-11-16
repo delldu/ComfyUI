@@ -292,6 +292,12 @@ class ControlNot(nn.Module):
     def __init__(self, preload=True):
         super().__init__()
 
+    def be_half(self):
+        return True
+
+    def on_cuda(self):
+        return True
+
     def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
         return []
 
@@ -336,7 +342,6 @@ class ControlNet(nn.Module):
         self.input_blocks = nn.ModuleList(
             [TimestepEmbedSequential(operations.Conv2d(in_channels, model_channels, 3, padding=1, rank=4))]
         )
-
         self.zero_convs = nn.ModuleList([self.make_zero_conv(model_channels)])
 
         self.input_hint_block = TimestepEmbedSequential(
@@ -357,8 +362,8 @@ class ControlNet(nn.Module):
             zero_module(operations.Conv2d(256, model_channels, 3, padding=1, rank=0)), # [320, 256, 3, 3]
         )
 
-        ch = model_channels
         ds = 1
+        ch = model_channels
         for level, mult in enumerate(channel_mult): # channel_mult=(1, 2, 4)
             for nr in range(self.num_res_blocks[level]): # [2, 2, 2]
                 layers = [
@@ -372,9 +377,6 @@ class ControlNet(nn.Module):
 
                 ch = mult * model_channels
                 if ds in attention_resolutions:
-                    num_heads = ch // num_head_channels
-                    dim_head = num_head_channels
-
                     layers.append(
                         TimestepEmbedSpatialTransformer(
                             ch,
@@ -387,20 +389,14 @@ class ControlNet(nn.Module):
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self.zero_convs.append(self.make_zero_conv(ch))
-            if level != len(channel_mult) - 1:
-                self.input_blocks.append(TimestepEmbedSequential(
-                    TimestepEmbedDownsample(ch, ch)))
 
+            if level != len(channel_mult) - 1:
+                self.input_blocks.append(TimestepEmbedSequential(TimestepEmbedDownsample(ch, ch)))
                 self.zero_convs.append(self.make_zero_conv(ch))
                 ds *= 2
 
-
-        # num_heads = ch // num_head_channels
-        # dim_head = num_head_channels
-
         self.middle_block = TimestepEmbedSequential(
             TimestepEmbedResBlock(ch, time_embed_dim, ch, operations=operations),
-
             TimestepEmbedSpatialTransformer(
                 ch,
                 ch // num_head_channels, #num_heads,
@@ -413,12 +409,18 @@ class ControlNet(nn.Module):
         )
         self.middle_block_out = self.make_zero_conv(ch)
 
+        count_model_params(self)
         if preload:
             load_ctrl_lora_weight(self, model_path="models/control-lora-canny-rank128.safetensors")
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
-        count_model_params(self)
+
+    def be_half(self):
+        return True   # model could be half on cuda ? must be for out of cuda memory
+
+    def on_cuda(self):
+        return self.time_embed[0].weight.is_cuda # model is on cuda ?       
 
     def make_zero_conv(self, channels, operations=ControlLoraOps()):
         return TimestepEmbedSequential(
@@ -426,12 +428,19 @@ class ControlNet(nn.Module):
         )
 
     def forward(self, x, hint, timesteps, context, y) -> List[torch.Tensor]:
-        # if os.environ.get('SDXL_DEBUG') is not None:
-        #     todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
-        #     todos.debug.output_var("ControlNet hint", hint)
-        #     todos.debug.output_var("ControlNet timesteps", timesteps)
-        #     todos.debug.output_var("ControlNet context", context)
-        #     todos.debug.output_var("ControlNet y", y)
+        if os.environ.get('SDXL_DEBUG'):
+            todos.debug.output_var("ControlNet x/noise_latent_mixer", x)
+            todos.debug.output_var("ControlNet hint", hint)
+            todos.debug.output_var("ControlNet timesteps", timesteps)
+            todos.debug.output_var("ControlNet context", context)
+            todos.debug.output_var("ControlNet y", y)
+
+        if self.on_cuda():
+            x = x.half().cuda()
+            hint = hint.half().cuda()
+            timesteps = timesteps.half().cuda()
+            context = context.half().cuda()
+            y = y.half().cuda()
 
         t_emb = timestep_embedding(timesteps, self.model_channels).to(x.dtype)
         emb = self.time_embed(t_emb).to(x.dtype)
@@ -447,19 +456,25 @@ class ControlNet(nn.Module):
         # len(self.input_hint_block) -- 15
         # len(self.zero_convs) -- 9
         for module, zero_conv in zip(self.input_blocks, self.zero_convs):
+            h = module(h, emb, context)
             if guided_hint is not None:
-                h = module(h, emb, context)
                 h += guided_hint
                 guided_hint = None
+
+            if self.on_cuda():
+                output.append(zero_conv(h, emb, context).cpu().float())
             else:
-                h = module(h, emb, context)
-            output.append(zero_conv(h, emb, context))
+                output.append(zero_conv(h, emb, context))
 
         h = self.middle_block(h, emb, context)
-        output.append(self.middle_block_out(h, emb, context))
 
-        # if os.environ.get('SDXL_DEBUG') is not None:
-        #     todos.debug.output_var("ControlNet output", output)
+        if self.on_cuda():
+            output.append(self.middle_block_out(h, emb, context).cpu().float())
+        else:
+            output.append(self.middle_block_out(h, emb, context))
+
+        if os.environ.get('SDXL_DEBUG'):
+            todos.debug.output_var("ControlNet output", output)
 
         return output
 
@@ -501,24 +516,3 @@ if __name__ == "__main__":
     # model = create_depth_control_lora()
     # model = create_color_control_lora()
     # # model = create_sketch_control_lora()
-
-
-    # size mismatch for lora_model.time_embed.0.up: copying a param with shape torch.Size([1280, 128]) from checkpoint, 
-    #     the shape in current model is torch.Size([128, 1280]).
-
-    # size mismatch for lora_model.time_embed.0.down: copying a param with shape torch.Size([128, 320]) from checkpoint, 
-    #     the shape in current model is torch.Size([1280, 128]).
-
-
-    # size mismatch for lora_model.time_embed.2.up: copying a param with shape torch.Size([1280, 128]) from checkpoint, 
-    #     the shape in current model is torch.Size([128, 1280]).
-    # size mismatch for lora_model.time_embed.2.down: copying a param with shape torch.Size([128, 1280]) from checkpoint, 
-    #     the shape in current model is torch.Size([1280, 128]).
-
-    # Sequential(
-    #   (0): lora.Linear(in_features=320, out_features=1280, weight=Parameter([1280, 320]), bias=Parameter([1280]), 
-    #     up=Parameter([1280, 128]), down=Parameter([1280, 128]))
-    #   (1): SiLU()
-    #   (2): lora.Linear(in_features=1280, out_features=1280, weight=Parameter([1280, 1280]), bias=Parameter([1280]), 
-    #     up=Parameter([1280, 128]), down=Parameter([1280, 128]))
-    # )

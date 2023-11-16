@@ -125,6 +125,8 @@ class CLIPVisionEncoder(nn.Module):
         )
         self.vision_model = CLIPVisionTransformer(config)
         self.visual_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
+
+        count_model_params(self)
         if preload:
             load_model_weight(self, model_path="models/clip_vision_g.safetensors")
 
@@ -133,8 +135,14 @@ class CLIPVisionEncoder(nn.Module):
 
         for param in self.parameters():
             param.requires_grad = False
+
         self.half().eval()
-        count_model_params(self)
+
+    def be_half(self):
+        return True   # model could be half on cuda ? 
+
+    def on_cuda(self):
+        return self.visual_projection.weight.is_cuda # model is on cuda ?    
 
     def get_embeds(self, image, normal_input: bool = True):
         if normal_input:
@@ -149,6 +157,9 @@ class CLIPVisionEncoder(nn.Module):
         return image_embeds
 
     def forward(self, image, weight: float=1.0, noise_augment: float=0.01):
+        if self.on_cuda():
+            image = image.half().cuda()
+
         image_embeds = self.get_embeds(image)
 
         # image_embeds.size() -- [1, 1280]
@@ -163,7 +174,7 @@ class CLIPVisionEncoder(nn.Module):
 
         pool_encoded = torch.cat((c_adm, noise_level_emb), 1) * weight
 
-        return pool_encoded[:, 0:1280]
+        return pool_encoded[:, 0:1280].cpu().float()
 
 
 def create_old_clip_vision():
@@ -178,10 +189,7 @@ def create_old_clip_vision():
 
 def create_clip_vision_model():
     """This model only been used by sdxl base model"""
-
     model = CLIPVisionEncoder()
-    
-
     return model
 
 
@@ -212,7 +220,7 @@ if __name__ == "__main__":
 
     model.cuda()
     with torch.no_grad():
-        output = model.get_embeds(image.half().cuda(), normal_input=False)
+        output = model.get_embeds(image, normal_input=False)
     todos.debug.output_var("output/image_embeds", output)
 
     class_name = model.__class__.__name__

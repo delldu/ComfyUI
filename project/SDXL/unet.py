@@ -71,23 +71,21 @@ class TimestepEmbedUpsample(nn.Module):
     An upsampling layer with an optional convolution.
     :param channels: channels in the inputs and outputs.
     """
-    def __init__(self, channels, out_channels=None, padding=1, scale2x=True):
+    def __init__(self, channels, out_channels=None, padding=1):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         self.conv = nn.Conv2d(self.channels, self.out_channels, 3, padding=padding)
-        self.scale2x = scale2x
 
     def forward(self, x, emb, context):  # x, [emb, context]
         assert x.shape[1] == self.channels
-        if self.scale2x:
-            shape = [x.shape[2] * 2, x.shape[3] * 2]
-            x = F.interpolate(x, size=shape, mode="nearest")
+        shape = [x.shape[2] * 2, x.shape[3] * 2]
+        x = F.interpolate(x, size=shape, mode="nearest")
         x = self.conv(x)
         return x
 
     def __repr__(self):
-        s = f"TimestepEmbedUpsample(in_channels={self.channels}, out_channels={self.out_channels}, scale2x={self.scale2x})"
+        s = f"TimestepEmbedUpsample(in_channels={self.channels}, out_channels={self.out_channels})"
         return s
 
 
@@ -118,9 +116,6 @@ class TimestepEmbedDownsample(nn.Module):
         return s
 
 class TimestepEmbedResBlock(nn.Module):
-    """
-    Shared by controlnet.py && unet.py
-    """
     def __init__(self, channels, emb_channels, out_channels=None, operations=None,  # UNetOps(), ControlnetOps()
     ):
         super().__init__()
@@ -331,10 +326,7 @@ class UNetModel(nn.Module):
                     )
                 if level and i == self.num_res_blocks[level]:  # self.num_res_blocks -- [2, 2, 2] or [2, 2, 2, 2]
                     # self.output_blocks[2], [5] or [2], [5], [8], [3, 2, 1] ==> {2, 5, 8} == 2 + 3 * (3 - level)
-                    if level != 1: # level == 1 means last layer for reverse channel_mult
-                        layers.append(TimestepEmbedUpsample(ch, out_channels=ch))
-                    else:
-                        layers.append(TimestepEmbedUpsample(ch, out_channels=ch, scale2x=False))
+                    layers.append(TimestepEmbedUpsample(ch, out_channels=ch))
                     ds //= 2
                 self.output_blocks.append(TimestepEmbedSequential(*layers))
 
@@ -351,8 +343,16 @@ class UNetModel(nn.Module):
                 load_unet_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
+        
         self.half().eval()
+
         count_model_params(self)
+
+    def be_half(self):
+        return True   # model could be half on cuda ? must be YES for out of cuda memory
+
+    def on_cuda(self):
+        return self.time_embed[0].weight.is_cuda # model is on cuda ?       
 
     def forward(self, x, timesteps, context, y, control: Dict[str, List[torch.Tensor]]):
         # x.shape -- [2, 4, 104, 157]
@@ -360,14 +360,28 @@ class UNetModel(nn.Module):
         # context.size() -- [2, 77, 2048]
         # y.size() -- [2, 2816]
         # control.keys() -- dict_keys(['input', 'middle', 'output'])
-        # if os.environ.get('SDXL_DEBUG') is not None:
-        #     todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
-        #     todos.debug.output_var("UNetModel timesteps", timesteps)
-        #     todos.debug.output_var("UNetModel context", context)
-        #     todos.debug.output_var("UNetModel y", y)
-        #     todos.debug.output_var("UNetModel control['input']", control['input'])
-        #     todos.debug.output_var("UNetModel control['middle']", control['middle'])
-        #     todos.debug.output_var("UNetModel control['output']", control['output'])
+
+        if os.environ.get('SDXL_DEBUG'):
+            todos.debug.output_var("UNetModel x/noise_latent_mixer", x)
+            todos.debug.output_var("UNetModel timesteps", timesteps)
+            todos.debug.output_var("UNetModel context", context)
+            todos.debug.output_var("UNetModel y", y)
+            todos.debug.output_var("UNetModel control['input']", control['input'])
+            todos.debug.output_var("UNetModel control['middle']", control['middle'])
+            todos.debug.output_var("UNetModel control['output']", control['output'])
+
+        if self.on_cuda():
+            x = x.half().cuda()
+            timesteps = timesteps.half().cuda()
+            context = context.half().cuda()
+            y = y.half().cuda()
+
+            # convert control
+            for k, vlist in control.items():
+                nlist = []
+                for v in vlist:
+                    nlist.append(v.half().cuda())
+                control[k] = nlist
 
         assert y is not None, "must specify y"
         hs = []
@@ -386,14 +400,14 @@ class UNetModel(nn.Module):
         for layer in self.middle_block:
             h = layer(h, emb, context)
 
-        if "middle" in control and len(control["middle"]) > 0:
+        if len(control["middle"]) > 0:
             ctrl = control["middle"].pop()
             if ctrl is not None:
                 h += ctrl
 
         for id, module in enumerate(self.output_blocks):  # len(self.output_blocks) -- 9 or 12
             hsp = hs.pop()
-            if "output" in control and len(control["output"]) > 0:
+            if len(control["output"]) > 0:
                 ctrl = control["output"].pop()
                 if ctrl is not None:
                     hsp += ctrl
@@ -404,16 +418,16 @@ class UNetModel(nn.Module):
             for layer in module:
                 h = layer(h, emb, context)
 
-            # xxxx8888
-            # if len(hs) > 0:
-            #     B, C, H, W = hs[-1].size()
-            #     h = F.interpolate(h, size=(H, W), mode="nearest")  # Restore to old size for upsample 2x
+            if len(hs) > 0 and (hs[-1].size(2) != h.size(2) or hs[-1].size(3) != h.size(3)):
+                # Restore to old size for upsample 2x
+                h = F.interpolate(h, size=(hs[-1].size(2), hs[-1].size(3)), mode="nearest")  
 
         output = self.out(h)
-        # if os.environ.get('SDXL_DEBUG') is not None:
-        #     todos.debug.output_var("UNetModel output", output)
+        if os.environ.get('SDXL_DEBUG'):
+            todos.debug.output_var("UNetModel output", output)
 
-        return output
+
+        return output.cpu().float()
 
 
 def create_base_unet_model():

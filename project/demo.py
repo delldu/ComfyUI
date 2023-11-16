@@ -13,29 +13,33 @@ import gradio as gr
 import numpy as np
 
 import torch
+import torch.nn.functional as F
 
-from SDXL import (
-    create_sdxl_base_model,
+
+from SDXL.model import (
+    ImageCreator,
 )
 
 from SDXL.util import (
+    vram_load,
+    vram_unload,
     load_torch_image,
 )
 
 from SDXL.canny import (
     detect_edge,
 )
+from SDXL.tokenizer import (
+    create_clip_token_model,
+)
+
 
 import todos
 import pdb
 
 # create models
-model = create_sdxl_base_model(skip_lora=False, skip_vision=True)
-sample_model = model.sample_model
-vae_model = model.vae_model
-clip_token = model.clip_token
-clip_text = model.clip_text # CLIPTextEncode
-clip_vision = model.clip_vision
+model = ImageCreator() # create_sdxl_base_model(skip_lora=False, skip_vision=True)
+clip_token = create_clip_token_model(version="base_1.0")
 
 
 def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resolution, time_steps, 
@@ -43,8 +47,11 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
 
     if input_image is not None:
         input_tensor = load_torch_image(input_image)
+        input_tensor = F.interpolate(input_tensor, size=(image_resolution, image_resolution), 
+            mode="bilinear", align_corners=False)
     else:
         input_tensor = torch.zeros(1, 3, 1024, 1024)
+
     guide_image = detect_edge(input_tensor, low_threshold, high_threshold)
 
     if seed == -1:
@@ -56,22 +63,32 @@ def process(input_image, prompt, a_prompt, n_prompt, num_samples, image_resoluti
     negative_tokens = clip_token.encode(n_prompt)
 
     with torch.no_grad():
-        positive_tensor = clip_text(positive_tokens)
-        negative_tensor = clip_text(negative_tokens)
-        latent_image = vae_model.encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
+        positive_tensor = model.clip_text(positive_tokens)
+        negative_tensor = model.clip_text(negative_tokens)
 
-    # latent_image.fill_(0)
-    positive_tensor['lora_guide'] = guide_image
-
-    for k, v in positive_tensor.items():
-        positive_tensor[k] = v.half().cuda()
-    for k, v in negative_tensor.items():
-        negative_tensor[k] = v.half().cuda()
-    latent_image = latent_image.half().cuda()
-
+    vram_load(model.vae_model)
     with torch.no_grad():
-        sample = sample_model(positive_tensor, negative_tensor, latent_image, cond_scale, time_steps, denoise, seed)
-        latent_output = vae_model.decode(sample.cpu())
+        latent_image = model.vae_model.encode(input_tensor) # torch.zeros(1, 3, 1024, 1024))
+    vram_unload(model.vae_model)
+
+    latent_image.fill_(0.0)
+    # load canny lora model weight if needed ???    
+    control_tensor = {}
+    control_tensor['lora_weight'] = torch.tensor([1.0])
+    control_tensor['lora_guide'] = guide_image
+
+    vram_load(model.unet_model)
+    vram_load(model.lora_model)
+    with torch.no_grad():
+        sample = model.euler_a_forward(positive_tensor, negative_tensor, cond_scale, latent_image, control_tensor,
+            time_steps, denoise, seed)
+    vram_unload(model.lora_model)
+    vram_unload(model.unet_model)
+
+    vram_load(model.vae_model)
+    with torch.no_grad():
+        latent_output = model.vae_model.decode(sample.cpu())
+    vram_unload(model.vae_model)
 
     x_samples = (latent_output.movedim(1, -1) * 255.0).numpy().astype(np.uint8)
 

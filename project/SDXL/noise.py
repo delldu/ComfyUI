@@ -45,10 +45,10 @@ class CLIPEmbedNoiseAugmentation(nn.Module):
         self.register_buffer("data_mean", clip_mean[None, :], persistent=False)
         self.register_buffer("data_std", clip_std[None, :], persistent=False)
 
+        count_model_params(self)
         for param in self.parameters():
             param.requires_grad = False
         self.half().eval()
-        count_model_params(self)
 
     def register_schedule(self, beta_schedule="linear", timesteps=1000, linear_start=1e-4, linear_end=2e-2):
         betas = make_beta_schedule(timesteps, linear_start=linear_start, linear_end=linear_end)

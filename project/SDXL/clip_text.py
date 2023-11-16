@@ -384,22 +384,30 @@ class CreatorCLIPTextEncoder(nn.Module):
         self.clip_l.layer_norm_hidden_state = False  # Base version
         self.clip_g = SDXLClipG()
 
+        count_model_params(self)
         if preload:
             load_base_clip_text_model_weight(self, model_path="models/sd_xl_base_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
-        self.half().eval()
-        count_model_params(self)
+        self.eval()
 
+    def be_half(self):
+        return False   # model could be half on cuda ? NO !!!
+
+    def on_cuda(self):
+        return False # self.clip_g.logit_scale.is_cuda # model is on cuda ?    
 
     def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        self.float() # not support half
+
         token_l = tokens["l"]  # padding with stop_token
         token_g = tokens["g"]  # padding with 0
 
         l_out, l_pooled = self.clip_l(token_l)
         g_out, g_pooled = self.clip_g(token_g)
 
-        return {"text_encoded": torch.cat([l_out, g_out], dim=-1), "pool_encoded": g_pooled}
+        return {"text_encoded": torch.cat([l_out, g_out], dim=-1).cpu(),
+                "pool_encoded": g_pooled.cpu()}
 
 
 class RefinerCLIPTextEncoder(nn.Module):
@@ -407,18 +415,28 @@ class RefinerCLIPTextEncoder(nn.Module):
         super().__init__()
         self.clip_g = SDXLClipG()
 
-        if preload:
-            load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
         for param in self.parameters():
             param.requires_grad = False
-        self.half().eval()
+
         count_model_params(self)
+        if preload:
+            load_refiner_clip_text_model_weight(self, model_path="models/sd_xl_refiner_1.0.safetensors")
+        self.eval()
+
+    def be_half(self):
+        return False   # model could be half on cuda ? NO !!!
+
+    def on_cuda(self):
+        return False # self.clip_g.logit_scale.is_cuda # model is on cuda ?    
 
     def forward(self, tokens: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        self.float() # not support half
+
         token_g = tokens["g"]
+
         g_out, g_pooled = self.clip_g(token_g)  # torch.LongTensor(token_g))
 
-        return {"text_encoded": g_out, "pool_encoded": g_pooled}
+        return {"text_encoded": g_out.cpu(), "pool_encoded": g_pooled.cpu()}
 
 # def create_clip_text_model(version):
 #     model = CLIPTextEncoder(version=version)
